@@ -1,0 +1,446 @@
+@page "/search"
+@inject PostsApi PostsApi
+@inject CatalogApi CatalogApi
+@inject NavigationManager Nav
+
+<PageTitle>Tìm phòng ở ghép – RoommateFinder</PageTitle>
+
+<div class="container py-4">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <h1 class="h4 mb-0">Tìm phòng ở ghép</h1>
+        <button type="button" class="btn btn-outline-primary btn-sm d-lg-none" @onclick="() => _filtersOpen = !_filtersOpen"
+                aria-expanded="@(_filtersOpen ? "true" : "false")" aria-controls="search-filters">
+            <i class="bi bi-funnel me-1"></i>@(_filtersOpen ? "Ẩn bộ lọc" : "Bộ lọc")
+            @if (ActiveFilterCount > 0)
+            {
+                <span class="badge text-bg-primary ms-1">@ActiveFilterCount</span>
+            }
+        </button>
+    </div>
+
+    <div class="row g-3">
+        @* ------------------------------------------------ Bộ lọc *@
+        <aside class="col-12 col-lg-3 @(_filtersOpen ? "" : "d-none d-lg-block")" id="search-filters">
+            <form class="card border-0 shadow-sm" @onsubmit="Apply" @onsubmit:preventDefault="true">
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold" for="f-keyword">Từ khóa</label>
+                        <input id="f-keyword" class="form-control" @bind="_f.Keyword" placeholder="Tiêu đề, mô tả, địa chỉ…" maxlength="100" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold" for="f-type">Loại tin</label>
+                        <select id="f-type" class="form-select" @bind="_f.PostType">
+                            <option value="">Tất cả</option>
+                            <option value="@PostType.HasRoom">@Labels.PostType(PostType.HasRoom)</option>
+                            <option value="@PostType.Seeking">@Labels.PostType(PostType.Seeking)</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold" for="f-area">Khu vực</label>
+                        <select id="f-area" class="form-select" @bind="_f.AreaId">
+                            <option value="0">Tất cả khu vực</option>
+                            @foreach (var a in _areas ?? new())
+                            {
+                                <option value="@a.AreaId">@AreaText(a)</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Giá mỗi người/tháng (đ)</label>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <input type="number" class="form-control" min="0" max="1000000000" step="100000" placeholder="Từ"
+                                       @bind="_f.MinPrice" aria-label="Giá từ" />
+                            </div>
+                            <div class="col-6">
+                                <input type="number" class="form-control" min="0" max="1000000000" step="100000" placeholder="Đến"
+                                       @bind="_f.MaxPrice" aria-label="Giá đến" />
+                            </div>
+                        </div>
+                        @if (_f.MinPrice != null || _f.MaxPrice != null)
+                        {
+                            <div class="form-text">
+                                @(_f.MinPrice is { } mn ? Fmt.Money(mn) : "0 đ") – @(_f.MaxPrice is { } mx ? Fmt.Money(mx) : "không giới hạn")
+                            </div>
+                        }
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold" for="f-gender">Giới tính của bạn</label>
+                        <select id="f-gender" class="form-select" @bind="_f.Gender">
+                            <option value="">Không lọc</option>
+                            <option value="@Gender.Male">Nam</option>
+                            <option value="@Gender.Female">Nữ</option>
+                            <option value="@Gender.Other">Khác</option>
+                        </select>
+                        <div class="form-text">Chỉ hiện tin phù hợp giới tính này hoặc không yêu cầu.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold" for="f-needed">Số chỗ cần tối thiểu</label>
+                        <select id="f-needed" class="form-select" @bind="_f.MinNeeded">
+                            <option value="0">Bất kỳ</option>
+                            @for (var i = 1; i <= 5; i++)
+                            {
+                                var n = i;
+                                <option value="@n">Từ @n người</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold" for="f-landmark">Gần địa điểm</label>
+                        <select id="f-landmark" class="form-select" value="@_f.LandmarkId" @onchange="OnLandmarkChanged">
+                            <option value="0">Không chọn</option>
+                            @foreach (var g in (_landmarks ?? new()).GroupBy(l => l.Type))
+                            {
+                                <optgroup label="@Labels.LandmarkType(g.Key)">
+                                    @foreach (var l in g)
+                                    {
+                                        <option value="@l.LandmarkId">@l.Name (@l.AreaName)</option>
+                                    }
+                                </optgroup>
+                            }
+                        </select>
+                        @if (_f.LandmarkId > 0)
+                        {
+                            <div class="input-group mt-2">
+                                <span class="input-group-text">Bán kính</span>
+                                <input type="number" class="form-control" min="0.5" max="20" step="0.5" placeholder="20"
+                                       @bind="_f.RadiusKm" aria-label="Bán kính (km)" />
+                                <span class="input-group-text">km</span>
+                            </div>
+                            <div class="form-text">Để trống = bán kính tối đa (20 km).</div>
+                        }
+                    </div>
+
+                    @if (_amenities is { Count: > 0 })
+                    {
+                        <div class="mb-3">
+                            <div class="form-label small fw-semibold">Tiện ích</div>
+                            <div class="row row-cols-2 row-cols-lg-1 g-1">
+                                @foreach (var a in _amenities)
+                                {
+                                    var id = a.AmenityId;
+                                    <div class="col">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="f-am-@id"
+                                                   checked="@_f.AmenityIds.Contains(id)" @onchange="e => ToggleAmenity(id, e)" />
+                                            <label class="form-check-label small" for="f-am-@id">@a.Name</label>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold" for="f-sort">Sắp xếp</label>
+                        <select id="f-sort" class="form-select" @bind="_f.Sort">
+                            <option value="newest">Mới nhất</option>
+                            <option value="price_asc">Giá tăng dần</option>
+                            <option value="price_desc">Giá giảm dần</option>
+                            <option value="distance" disabled="@(_f.LandmarkId <= 0)">Gần nhất@(_f.LandmarkId <= 0 ? " (chọn địa điểm)" : "")</option>
+                        </select>
+                    </div>
+
+                    @if (_formError != null)
+                    {
+                        <div class="alert alert-warning py-2 small">@_formError</div>
+                    }
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-search me-1"></i>Áp dụng</button>
+                        <button type="button" class="btn btn-outline-secondary" @onclick="Reset">Xóa bộ lọc</button>
+                    </div>
+                </div>
+            </form>
+        </aside>
+
+        @* ------------------------------------------------ Kết quả *@
+        <section class="col-12 col-lg-9">
+            @if (_error != null)
+            {
+                <ErrorAlert Message="@_error" OnRetry="LoadAsync" />
+            }
+            else if (_result == null)
+            {
+                <Loading />
+            }
+            else
+            {
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                    <div class="text-secondary">
+                        Tìm thấy <strong class="text-body">@_result.TotalCount</strong> tin
+                        @if (SelectedLandmark is { } lm)
+                        {
+                            <span>trong bán kính @(RadiusKm is { } r ? r.ToString("0.#") : "20") km quanh <strong class="text-body">@lm.Name</strong></span>
+                        }
+                    </div>
+                    <div class="small text-secondary">Sắp xếp: @SortLabel(EffectiveSort)</div>
+                </div>
+
+                @if (_result.Items.Count == 0)
+                {
+                    <EmptyState Text="Không tìm thấy tin phù hợp. Hãy thử nới rộng bộ lọc." Icon="bi-search">
+                        @if (ActiveFilterCount > 0)
+                        {
+                            <button class="btn btn-outline-primary btn-sm mt-3" @onclick="Reset">Xóa bộ lọc</button>
+                        }
+                    </EmptyState>
+                }
+                else
+                {
+                    <div class="row g-3">
+                        @foreach (var p in _result.Items)
+                        {
+                            <div class="col-12 col-sm-6 col-xl-4" @key="p.PostId">
+                                <PostCard Post="p" />
+                            </div>
+                        }
+                    </div>
+                    <Pager Page="_result.Page" TotalPages="_result.TotalPages" PageChanged="GoToPage" />
+                }
+            }
+        </section>
+    </div>
+</div>
+
+@code {
+    private const int PageSize = 12;
+    private static readonly string[] Sorts = { "newest", "price_asc", "price_desc", "distance" };
+
+    // ---- Trạng thái lấy từ URL (nguồn sự thật)
+    [SupplyParameterFromQuery(Name = "keyword")] public string? Keyword { get; set; }
+    [SupplyParameterFromQuery(Name = "postType")] public string? TypeFilter { get; set; }
+    [SupplyParameterFromQuery(Name = "areaId")] public int? AreaId { get; set; }
+    [SupplyParameterFromQuery(Name = "minPrice")] public decimal? MinPrice { get; set; }
+    [SupplyParameterFromQuery(Name = "maxPrice")] public decimal? MaxPrice { get; set; }
+    [SupplyParameterFromQuery(Name = "gender")] public string? GenderFilter { get; set; }
+    [SupplyParameterFromQuery(Name = "minNeeded")] public int? MinNeeded { get; set; }
+    [SupplyParameterFromQuery(Name = "amenityIds")] public int[]? AmenityIds { get; set; }
+    [SupplyParameterFromQuery(Name = "landmarkId")] public int? LandmarkId { get; set; }
+    [SupplyParameterFromQuery(Name = "radiusKm")] public double? RadiusKm { get; set; }
+    [SupplyParameterFromQuery(Name = "sort")] public string? Sort { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private List<AreaDto>? _areas;
+    private List<LandmarkDto>? _landmarks;
+    private List<AmenityDto>? _amenities;
+
+    private PagedResult<PostSummaryDto>? _result;
+    private string? _error;
+    private string? _formError;
+    private bool _filtersOpen;
+    private int _loadVersion;
+
+    private FilterForm _f = new();
+
+    /// <summary>Mặc định "gần nhất" khi có địa điểm mốc, ngược lại "mới nhất"; "distance" không hợp lệ khi không có mốc.</summary>
+    private string EffectiveSort => ResolveSort(Sort, LandmarkId);
+
+    private static string DefaultSort(int? landmarkId) => landmarkId is > 0 ? "distance" : "newest";
+
+    private static string ResolveSort(string? sort, int? landmarkId)
+    {
+        if (sort == null || !Sorts.Contains(sort)) return DefaultSort(landmarkId);
+        if (sort == "distance" && landmarkId is not > 0) return "newest";
+        return sort;
+    }
+
+    private LandmarkDto? SelectedLandmark => LandmarkId is > 0 ? _landmarks?.FirstOrDefault(l => l.LandmarkId == LandmarkId) : null;
+
+    private int ActiveFilterCount =>
+        (string.IsNullOrWhiteSpace(Keyword) ? 0 : 1) + (string.IsNullOrEmpty(TypeFilter) ? 0 : 1) + (AreaId is > 0 ? 1 : 0)
+        + (MinPrice != null || MaxPrice != null ? 1 : 0) + (string.IsNullOrEmpty(GenderFilter) ? 0 : 1) + (MinNeeded is > 0 ? 1 : 0)
+        + (AmenityIds is { Length: > 0 } ? 1 : 0) + (LandmarkId is > 0 ? 1 : 0);
+
+    protected override void OnInitialized()
+    {
+        _ = LoadCatalogAsync();
+    }
+
+    private async Task LoadCatalogAsync()
+    {
+        // Danh mục lỗi không chặn kết quả tìm kiếm: chỉ để trống lựa chọn tương ứng.
+        var areas = Safe(CatalogApi.AreasAsync());
+        var landmarks = Safe(CatalogApi.LandmarksAsync());
+        var amenities = Safe(CatalogApi.AmenitiesAsync());
+        _areas = await areas;
+        _landmarks = (await landmarks).Where(l => l.IsActive).OrderBy(l => l.Name).ToList();
+        _amenities = (await amenities).Where(a => a.IsActive).ToList();
+        StateHasChanged();
+    }
+
+    private static async Task<List<T>> Safe<T>(Task<List<T>> task)
+    {
+        try { return await task; }
+        catch (ApiException) { return new(); }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Đồng bộ form theo URL (F5 / Back / Forward).
+        _f = new FilterForm
+        {
+            Keyword = Keyword,
+            PostType = TypeFilter is PostType.HasRoom or PostType.Seeking ? TypeFilter : "",
+            AreaId = AreaId ?? 0,
+            MinPrice = MinPrice,
+            MaxPrice = MaxPrice,
+            Gender = GenderFilter ?? "",
+            MinNeeded = MinNeeded ?? 0,
+            AmenityIds = (AmenityIds ?? Array.Empty<int>()).Distinct().ToList(),
+            LandmarkId = LandmarkId ?? 0,
+            RadiusKm = RadiusKm,
+            Sort = EffectiveSort,
+        };
+        _formError = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var version = ++_loadVersion;
+        _error = null;
+        _result = null;
+        try
+        {
+            var result = await PostsApi.SearchAsync(new PostSearchQuery
+            {
+                Keyword = string.IsNullOrWhiteSpace(Keyword) ? null : Keyword.Trim(),
+                PostType = string.IsNullOrEmpty(TypeFilter) ? null : TypeFilter,
+                AreaId = AreaId is > 0 ? AreaId : null,
+                MinPrice = MinPrice,
+                MaxPrice = MaxPrice,
+                Gender = string.IsNullOrEmpty(GenderFilter) ? null : GenderFilter,
+                MinNeeded = MinNeeded is > 0 ? MinNeeded : null,
+                AmenityIds = AmenityIds is { Length: > 0 } ? AmenityIds.Distinct().ToList() : null,
+                LandmarkId = LandmarkId is > 0 ? LandmarkId : null,
+                RadiusKm = LandmarkId is > 0 ? RadiusKm : null,
+                Sort = EffectiveSort,
+                Page = Math.Max(1, PageNumber ?? 1),
+                PageSize = PageSize,
+            });
+            if (version == _loadVersion) _result = result;
+        }
+        catch (ApiException ex)
+        {
+            if (version == _loadVersion) _error = ex.Message;
+        }
+    }
+
+    private void OnLandmarkChanged(ChangeEventArgs e)
+    {
+        var before = _f.LandmarkId;
+        _f.LandmarkId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        if (_f.LandmarkId <= 0)
+        {
+            _f.RadiusKm = null;
+            if (_f.Sort == "distance") _f.Sort = "newest";
+        }
+        else if (before <= 0 && _f.Sort == "newest")
+        {
+            _f.Sort = "distance"; // chọn mốc lần đầu: mặc định xếp theo khoảng cách
+        }
+    }
+
+    private void ToggleAmenity(int id, ChangeEventArgs e)
+    {
+        if (e.Value is true) { if (!_f.AmenityIds.Contains(id)) _f.AmenityIds.Add(id); }
+        else _f.AmenityIds.Remove(id);
+    }
+
+    private void Apply()
+    {
+        _formError = null;
+        if (_f.MinPrice is < 0 || _f.MaxPrice is < 0 || _f.MinPrice > PostLimits.MaxPrice || _f.MaxPrice > PostLimits.MaxPrice)
+        {
+            _formError = "Khoảng giá không hợp lệ (0 – 1 tỷ đồng).";
+            return;
+        }
+        if (_f.MinPrice != null && _f.MaxPrice != null && _f.MinPrice > _f.MaxPrice)
+        {
+            _formError = "Giá tối thiểu phải nhỏ hơn hoặc bằng giá tối đa.";
+            return;
+        }
+        if (_f.LandmarkId > 0 && _f.RadiusKm is { } r && (r < 0.5 || r > 20))
+        {
+            _formError = "Bán kính phải từ 0,5 đến 20 km.";
+            return;
+        }
+        _filtersOpen = false;
+        Navigate(_f, page: 1);
+    }
+
+    private void Reset()
+    {
+        _filtersOpen = false;
+        Nav.NavigateTo("/search");
+    }
+
+    private void GoToPage(int page)
+    {
+        // Phân trang giữ nguyên bộ lọc đang áp dụng trên URL (không lấy giá trị đang sửa dở trong form).
+        Navigate(new FilterForm
+        {
+            Keyword = Keyword, PostType = TypeFilter ?? "", AreaId = AreaId ?? 0, MinPrice = MinPrice, MaxPrice = MaxPrice,
+            Gender = GenderFilter ?? "", MinNeeded = MinNeeded ?? 0, AmenityIds = (AmenityIds ?? Array.Empty<int>()).ToList(),
+            LandmarkId = LandmarkId ?? 0, RadiusKm = RadiusKm, Sort = EffectiveSort,
+        }, page);
+    }
+
+    private void Navigate(FilterForm f, int page)
+    {
+        int? landmark = f.LandmarkId > 0 ? f.LandmarkId : null;
+        var sort = ResolveSort(f.Sort, landmark);
+        var url = new Query()
+            .Add("keyword", f.Keyword?.Trim())
+            .Add("postType", f.PostType)
+            .Add("areaId", f.AreaId > 0 ? f.AreaId : (int?)null)
+            .Add("minPrice", f.MinPrice)
+            .Add("maxPrice", f.MaxPrice)
+            .Add("gender", f.Gender)
+            .Add("minNeeded", f.MinNeeded > 0 ? f.MinNeeded : (int?)null)
+            .Add("amenityIds", f.AmenityIds.Distinct().OrderBy(x => x).ToList())
+            .Add("landmarkId", landmark)
+            .Add("radiusKm", landmark != null ? f.RadiusKm : null)
+            .Add("sort", sort == DefaultSort(landmark) ? null : sort) // URL gọn: bỏ sort khi là mặc định
+            .Add("page", page > 1 ? page : (int?)null)
+            .For("/search");
+        Nav.NavigateTo(url);
+    }
+
+    private static string SortLabel(string sort) => sort switch
+    {
+        "price_asc" => "Giá tăng dần",
+        "price_desc" => "Giá giảm dần",
+        "distance" => "Gần nhất",
+        _ => "Mới nhất",
+    };
+
+    private static string AreaText(AreaDto a) => string.IsNullOrEmpty(a.District) ? $"{a.Name}, {a.City}" : $"{a.Name} ({a.District})";
+
+    private static class PostLimits
+    {
+        public const decimal MaxPrice = 1_000_000_000m;
+    }
+
+    private class FilterForm
+    {
+        public string? Keyword { get; set; }
+        public string PostType { get; set; } = "";
+        public int AreaId { get; set; }
+        public decimal? MinPrice { get; set; }
+        public decimal? MaxPrice { get; set; }
+        public string Gender { get; set; } = "";
+        public int MinNeeded { get; set; }
+        public List<int> AmenityIds { get; set; } = new();
+        public int LandmarkId { get; set; }
+        public double? RadiusKm { get; set; }
+        public string Sort { get; set; } = "newest";
+    }
+}

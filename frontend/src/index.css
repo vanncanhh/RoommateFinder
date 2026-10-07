@@ -1,0 +1,32 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #f5f5f5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Không cho trang cuộn ngang ở màn hình hẹp (360px). */
+body {
+  overflow-x: hidden;
+}
+
+img {
+  max-width: 100%;
+}
+
+/* Danh mục đã ẩn (isActive = false) hiển thị mờ trong bảng quản trị. */
+.catalog-row-inactive > td {
+  opacity: 0.55;
+}
+
+/* Menu ngang trong header không có viền dưới. */
+.ant-layout-header .ant-menu-horizontal {
+  line-height: 62px;
+}

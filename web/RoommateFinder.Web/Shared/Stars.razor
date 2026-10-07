@@ -1,0 +1,30 @@
+@* Hiển thị điểm đánh giá; Editable = true thì cho chọn 1–5 sao (không cho về 0). *@
+<span class="text-nowrap">
+    @for (var i = 1; i <= 5; i++)
+    {
+        var star = i;
+        var icon = Value >= star ? "bi-star-fill" : Value >= star - 0.5m ? "bi-star-half" : "bi-star";
+        if (Editable)
+        {
+            <i class="bi @icon star fs-4" role="button" title="@star sao" @onclick="() => Pick(star)"></i>
+        }
+        else
+        {
+            <i class="bi @icon star"></i>
+        }
+    }
+    @if (ShowValue && !Editable)
+    {
+        <span class="ms-1 small text-secondary">@Value.ToString("0.0")@(Count != null ? $" ({Count} đánh giá)" : "")</span>
+    }
+</span>
+
+@code {
+    [Parameter] public decimal Value { get; set; }
+    [Parameter] public EventCallback<decimal> ValueChanged { get; set; }
+    [Parameter] public bool Editable { get; set; }
+    [Parameter] public bool ShowValue { get; set; } = true;
+    [Parameter] public int? Count { get; set; }
+
+    private Task Pick(int star) => ValueChanged.InvokeAsync(star);
+}

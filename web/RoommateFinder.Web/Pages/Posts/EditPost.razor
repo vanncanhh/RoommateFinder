@@ -1,0 +1,115 @@
+@page "/posts/{Id:long}/edit"
+@attribute [Authorize]
+@inject PostsApi PostsApi
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>Sửa tin – RoommateFinder</PageTitle>
+
+<div class="container py-4" style="max-width:960px">
+    <nav aria-label="breadcrumb" class="small mb-2">
+        <a href="/my-posts" class="text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Tin của tôi</a>
+    </nav>
+    <h1 class="h4 mb-3">Sửa tin đăng</h1>
+
+    @if (_error != null)
+    {
+        <ErrorAlert Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_notFound)
+    {
+        <EmptyState Text="Tin không tồn tại hoặc đã bị xóa." Icon="bi-file-earmark-x">
+            <a href="/my-posts" class="btn btn-primary mt-3">Về Tin của tôi</a>
+        </EmptyState>
+    }
+    else if (_post == null)
+    {
+        <Loading />
+    }
+    else if (!_post.IsOwner)
+    {
+        <div class="alert alert-danger d-flex gap-2">
+            <i class="bi bi-shield-lock"></i>
+            <div>Bạn chỉ sửa được tin của chính mình. <a href="/posts/@_post.PostId" class="alert-link">Xem tin</a></div>
+        </div>
+    }
+    else if (!PostRules.CanEdit(_post))
+    {
+        <div class="alert alert-warning">
+            <div class="fw-semibold mb-1">
+                Tin đang ở trạng thái <Badge Text="@Labels.PostStatus(_post.Status)" Color="@Labels.PostStatusColor(_post.Status)" /> nên không thể sửa.
+            </div>
+            <div>@NotEditableReason(_post.Status)</div>
+            <div class="mt-2 d-flex flex-wrap gap-2">
+                <a href="/posts/@_post.PostId" class="btn btn-sm btn-outline-secondary">Xem tin</a>
+                <a href="/my-posts" class="btn btn-sm btn-outline-primary">Về Tin của tôi</a>
+            </div>
+        </div>
+    }
+    else
+    {
+        @if (_post.Status is PostStatus.Approved or PostStatus.Rejected)
+        {
+            <div class="alert alert-info small">
+                <i class="bi bi-info-circle me-1"></i>
+                Sau khi lưu, tin sẽ chuyển về trạng thái <strong>chờ duyệt</strong>
+                @(_post.Status == PostStatus.Approved ? "và tạm ngừng hiển thị cho đến khi được duyệt lại." : "để kiểm duyệt viên xem xét lại.")
+            </div>
+        }
+        @if (_post.Status == PostStatus.Rejected && !string.IsNullOrEmpty(_post.RejectReason))
+        {
+            <div class="alert alert-danger small">
+                <strong>Lý do bị từ chối:</strong> <span style="white-space:pre-wrap">@_post.RejectReason</span>
+            </div>
+        }
+        <PostForm Existing="_post" SubmitText="Lưu thay đổi" CancelHref="@($"/posts/{_post.PostId}")" OnSubmit="SubmitAsync" />
+    }
+</div>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private PostDetailDto? _post;
+    private string? _error;
+    private bool _notFound;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_post?.PostId != Id) await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _notFound = false;
+        _post = null;
+        try
+        {
+            _post = await PostsApi.GetAsync(Id);
+        }
+        catch (ApiException ex) when (ex.IsNotFound)
+        {
+            _notFound = true;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private static string NotEditableReason(string status) => status switch
+    {
+        PostStatus.Hidden => "Tin đã bị ẩn do vi phạm quy định nên không thể chỉnh sửa. Nếu bạn cho rằng đây là nhầm lẫn, hãy liên hệ ban quản trị.",
+        PostStatus.Expired => "Tin đã hết hạn. Hãy gia hạn tin (nếu còn lượt) trong mục Tin của tôi, hoặc đăng tin mới.",
+        PostStatus.Closed => "Tin đã được đóng (đã tìm được người). Hãy đăng tin mới nếu bạn cần tìm thêm.",
+        _ => "Chỉ sửa được tin đang chờ duyệt, đang hiển thị hoặc bị từ chối.",
+    };
+
+    private async Task SubmitAsync(PostForm.Submission s)
+    {
+        var wasReviewed = _post!.Status is PostStatus.Approved or PostStatus.Rejected;
+        var updated = await PostsApi.UpdateAsync(_post.PostId, s.Data, s.Images, PostRules.MaxImageBytes);
+        Toast.Success(wasReviewed ? "Tin đã cập nhật và chờ duyệt lại" : "Đã cập nhật tin");
+        Nav.NavigateTo($"/posts/{updated.PostId}");
+    }
+}

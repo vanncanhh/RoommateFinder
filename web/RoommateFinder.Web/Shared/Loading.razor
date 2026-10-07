@@ -1,0 +1,9 @@
+<div class="d-flex justify-content-center align-items-center text-secondary @(Small ? "py-3" : "py-5")">
+    <div class="spinner-border @(Small ? "spinner-border-sm" : "") text-primary me-2" role="status"></div>
+    <span>@Text</span>
+</div>
+
+@code {
+    [Parameter] public bool Small { get; set; }
+    [Parameter] public string Text { get; set; } = "Đang tải…";
+}

@@ -1,0 +1,11 @@
+<div class="text-center text-secondary py-5">
+    <i class="bi @Icon display-5 d-block mb-2"></i>
+    <div>@Text</div>
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string Text { get; set; } = "Không có dữ liệu";
+    [Parameter] public string Icon { get; set; } = "bi-inbox";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

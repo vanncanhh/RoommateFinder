@@ -1,0 +1,330 @@
+@page "/moderator/reports"
+@layout ModeratorLayout
+@attribute [Authorize(Roles = Roles.ModeratorOrAdmin)]
+@inject ModerationApi ModerationApi
+@inject AuthSession Session
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>Báo cáo vi phạm – RoommateFinder</PageTitle>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <h1 class="h4 mb-0"><i class="bi bi-flag me-2"></i>Báo cáo vi phạm</h1>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Lọc trạng thái">
+        @foreach (var s in ReportStatus.All)
+        {
+            <button type="button" class="btn @(s == CurrentStatus ? "btn-primary" : "btn-outline-primary")" @onclick="() => Navigate(s, 1)">@Labels.ReportStatus(s)</button>
+        }
+    </div>
+</div>
+
+<p class="small text-secondary">
+    Xử lý một báo cáo (trừ "Bỏ qua") sẽ đóng luôn các báo cáo đang chờ khác về cùng đối tượng.
+    Không thể xử lý báo cáo nhắm vào chính mình.
+</p>
+
+@if (_loading && _data == null)
+{
+    <Loading />
+}
+else if (_error != null)
+{
+    <ErrorAlert Message="@_error" OnRetry="LoadAsync" />
+}
+else if (_data == null || _data.Items.Count == 0)
+{
+    <EmptyState Icon="bi-flag" Text="@(CurrentStatus == ReportStatus.Pending ? "Không có báo cáo nào đang chờ xử lý." : "Không có báo cáo nào.")" />
+}
+else
+{
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Đối tượng</th>
+                        <th>Người chịu trách nhiệm</th>
+                        <th>Lý do</th>
+                        <th>Mô tả</th>
+                        <th>Người báo cáo</th>
+                        <th>Ngày gửi</th>
+                        @if (CurrentStatus == ReportStatus.Pending)
+                        {
+                            <th class="text-end">Thao tác</th>
+                        }
+                        else
+                        {
+                            <th>Kết quả xử lý</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _data.Items)
+                    {
+                        <tr>
+                            <td style="min-width:160px">
+                                @if (r.PostId is { } pid)
+                                {
+                                    <div class="small text-secondary"><i class="bi bi-file-earmark-text me-1"></i>Tin #@pid</div>
+                                    <a href="/posts/@pid">@(r.PostTitle ?? "(không có tiêu đề)")</a>
+                                    @if (!string.IsNullOrEmpty(r.PostStatus))
+                                    {
+                                        <div><Badge Text="@Labels.PostStatus(r.PostStatus)" Color="@Labels.PostStatusColor(r.PostStatus)" /></div>
+                                    }
+                                }
+                                else if (r.ReportedUserId is { } uid)
+                                {
+                                    <div class="small text-secondary"><i class="bi bi-person me-1"></i>Người dùng</div>
+                                    <a href="/users/@uid">@r.ReportedUserName</a>
+                                }
+                            </td>
+                            <td>
+                                <a href="/users/@r.TargetUserId">@r.TargetUserName</a>
+                                @if (r.PendingReportsOnTarget > 0)
+                                {
+                                    <div><span class="badge text-bg-danger" title="Số báo cáo đang chờ về đối tượng này">@r.PendingReportsOnTarget báo cáo chờ</span></div>
+                                }
+                            </td>
+                            <td>@r.ReasonName</td>
+                            <td class="small" style="min-width:180px;white-space:pre-wrap">@(string.IsNullOrWhiteSpace(r.Description) ? "—" : r.Description)</td>
+                            <td><a href="/users/@r.ReporterId">@r.ReporterName</a></td>
+                            <td class="small text-nowrap">@Fmt.DateAndTime(r.CreatedAt)</td>
+                            @if (CurrentStatus == ReportStatus.Pending)
+                            {
+                                <td class="text-end">
+                                    @if (r.TargetUserId == Session.UserId)
+                                    {
+                                        <span class="d-inline-block" tabindex="0" title="Không được xử lý báo cáo nhắm vào chính mình">
+                                            <button class="btn btn-sm btn-primary" disabled>Xử lý</button>
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-sm btn-primary" @onclick="() => OpenHandle(r)"><i class="bi bi-hammer"></i> Xử lý</button>
+                                    }
+                                </td>
+                            }
+                            else
+                            {
+                                <td class="small" style="min-width:180px">
+                                    <Badge Text="@Labels.ReportStatus(r.Status)" Color="@(r.Status == ReportStatus.Resolved ? "success" : "secondary")" />
+                                    <div>@r.HandlerName <span class="text-secondary">· @Fmt.DateAndTime(r.HandledAt)</span></div>
+                                    @if (!string.IsNullOrEmpty(r.HandledNote))
+                                    {
+                                        <div class="text-secondary" style="white-space:pre-wrap">@r.HandledNote</div>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="small text-secondary mt-2">Tổng cộng @_data.TotalCount báo cáo.</div>
+    <Pager Page="CurrentPage" TotalPages="_data.TotalPages" PageChanged="p => Navigate(CurrentStatus, p)" />
+}
+
+<Modal Show="_target != null" Title="Xử lý báo cáo" OnClose="CloseHandle" CloseOnBackdrop="false">
+    <ChildContent>
+        @if (_target is { } t)
+        {
+            <div class="small mb-3 border rounded p-2 bg-light">
+                <div><span class="text-secondary">Đối tượng:</span> @(t.PostId != null ? $"Tin \"{t.PostTitle}\"" : $"Người dùng {t.ReportedUserName}")</div>
+                <div><span class="text-secondary">Người chịu trách nhiệm:</span> @t.TargetUserName</div>
+                <div><span class="text-secondary">Lý do:</span> @t.ReasonName</div>
+                @if (!string.IsNullOrWhiteSpace(t.Description))
+                {
+                    <div style="white-space:pre-wrap"><span class="text-secondary">Mô tả:</span> @t.Description</div>
+                }
+            </div>
+
+            <div class="mb-3">
+                <div class="form-label">Quyết định <span class="text-danger">*</span></div>
+                @foreach (var d in AvailableDecisions(t))
+                {
+                    var decision = d;
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="decision" id="dec-@decision"
+                               checked="@(_decision == decision)" @onchange="() => _decision = decision" />
+                        <label class="form-check-label @(decision == ReportDecision.Ban ? "text-danger fw-semibold" : "")" for="dec-@decision">@DecisionLabel(decision)</label>
+                    </div>
+                }
+            </div>
+
+            @if (_decision == ReportDecision.Suspend)
+            {
+                <div class="mb-3">
+                    <label class="form-label" for="suspendDays">Số ngày khóa (1–365) <span class="text-danger">*</span></label>
+                    <input id="suspendDays" type="number" min="1" max="365" class="form-control" style="max-width:160px" @bind="_suspendDays" />
+                    <div class="form-text">Nếu người này đã từng bị khóa (tạm thời hoặc vĩnh viễn), hệ thống sẽ tự chuyển thành <strong>khóa vĩnh viễn</strong> (BR-08).</div>
+                </div>
+            }
+            @if (_decision == ReportDecision.Ban)
+            {
+                <div class="alert alert-danger small py-2">
+                    <i class="bi bi-exclamation-octagon-fill me-1"></i>Tài khoản sẽ bị <strong>khóa vĩnh viễn</strong>, mọi tin đang hiển thị bị ẩn. Hãy chắc chắn trước khi xác nhận.
+                </div>
+            }
+
+            <div class="mb-2">
+                <label class="form-label" for="handleNote">Ghi chú (gửi kèm thông báo cho người vi phạm)</label>
+                <textarea id="handleNote" class="form-control" rows="3" maxlength="450" @bind="_note" @bind:event="oninput"></textarea>
+                <div class="form-text text-end">@(_note.Trim().Length)/450</div>
+            </div>
+
+            <div class="form-text">
+                <i class="bi bi-info-circle me-1"></i>Mức xử lý: cảnh cáo (nhẹ) → ẩn tin (trung bình) → tạm khóa / khóa vĩnh viễn (nặng).
+                Vi phạm nặng lần thứ hai sẽ tự động bị nâng lên khóa vĩnh viễn (BR-08).
+            </div>
+
+            <ErrorAlert Message="@_handleError" Class="mt-3 mb-0" />
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="CloseHandle" disabled="@_busy">Hủy</button>
+        <button class="btn @(_decision is ReportDecision.Ban or ReportDecision.Suspend ? "btn-danger" : "btn-primary")" @onclick="HandleAsync" disabled="@(_busy || string.IsNullOrEmpty(_decision))">
+            @if (_busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+            Xác nhận
+        </button>
+    </Footer>
+</Modal>
+
+@code {
+    [SupplyParameterFromQuery] public string? Status { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private PagedResult<ReportDto>? _data;
+    private bool _loading;
+    private string? _error;
+    private string? _loadedKey;
+
+    private ReportDto? _target;
+    private string _decision = "";
+    private int? _suspendDays = 7;
+    private string _note = "";
+    private string? _handleError;
+    private bool _busy;
+
+    private string CurrentStatus => Status != null && ReportStatus.All.Contains(Status) ? Status : ReportStatus.Pending;
+    private int CurrentPage => PageNumber is > 0 ? PageNumber.Value : 1;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = $"{CurrentStatus}|{CurrentPage}";
+        if (key == _loadedKey) return;
+        _loadedKey = key;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _data = await ModerationApi.ReportsAsync(CurrentStatus, CurrentPage);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+            _data = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ReloadAfterActionAsync()
+    {
+        await LoadAsync();
+        if (_data != null && _data.Items.Count == 0 && CurrentPage > 1)
+            Navigate(CurrentStatus, Math.Max(1, _data.TotalPages));
+    }
+
+    private void Navigate(string status, int page) =>
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["status"] = status == ReportStatus.Pending ? null : status,
+            ["page"] = page > 1 ? page : null,
+        }));
+
+    private static IEnumerable<string> AvailableDecisions(ReportDto r) =>
+        ReportDecision.All.Where(d => d != ReportDecision.HidePost || r.PostId != null);
+
+    private static string DecisionLabel(string d) => d switch
+    {
+        ReportDecision.Dismiss => "Bỏ qua (không vi phạm)",
+        ReportDecision.Warning => "Cảnh cáo",
+        ReportDecision.HidePost => "Ẩn tin",
+        ReportDecision.Suspend => "Tạm khóa tài khoản",
+        ReportDecision.Ban => "Khóa vĩnh viễn",
+        _ => d,
+    };
+
+    private void OpenHandle(ReportDto r)
+    {
+        _target = r;
+        _decision = "";
+        _suspendDays = 7;
+        _note = "";
+        _handleError = null;
+    }
+
+    private void CloseHandle() => _target = null;
+
+    private async Task HandleAsync()
+    {
+        if (_target is not { } t) return;
+        _handleError = null;
+        if (!ReportDecision.All.Contains(_decision))
+        {
+            _handleError = "Vui lòng chọn quyết định xử lý.";
+            return;
+        }
+        if (_decision == ReportDecision.Suspend && _suspendDays is not (>= 1 and <= 365))
+        {
+            _handleError = "Số ngày khóa phải từ 1 đến 365.";
+            return;
+        }
+        var note = _note.Trim();
+        if (note.Length > 450)
+        {
+            _handleError = "Ghi chú tối đa 450 ký tự.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await ModerationApi.HandleReportAsync(t.ReportId, new HandleReportRequest
+            {
+                Decision = _decision,
+                SuspendDays = _decision == ReportDecision.Suspend ? _suspendDays : null,
+                Note = string.IsNullOrEmpty(note) ? null : note,
+            });
+            Toast.Success(_decision == ReportDecision.Dismiss ? "Đã bỏ qua báo cáo." : "Đã xử lý báo cáo.");
+            _target = null;
+            await ReloadAfterActionAsync();
+        }
+        catch (ApiException ex)
+        {
+            if (ex.IsConflict || ex.IsNotFound)
+            {
+                // Báo cáo vừa được người khác xử lý / tài khoản đã bị khóa vĩnh viễn
+                Toast.Error(ex);
+                _target = null;
+                await ReloadAfterActionAsync();
+            }
+            else
+            {
+                _handleError = ex.Message;
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

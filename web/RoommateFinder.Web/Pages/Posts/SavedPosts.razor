@@ -1,0 +1,94 @@
+@page "/saved"
+@attribute [Authorize]
+@inject PostsApi PostsApi
+@inject ToastService Toast
+
+<PageTitle>Tin đã lưu – RoommateFinder</PageTitle>
+
+<div class="container py-4">
+    <h1 class="h4 mb-3">Tin đã lưu</h1>
+
+    @if (_error != null)
+    {
+        <ErrorAlert Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_posts == null)
+    {
+        <Loading />
+    }
+    else if (_posts.Count == 0)
+    {
+        <EmptyState Text="Bạn chưa lưu tin nào." Icon="bi-bookmark">
+            <a href="/search" class="btn btn-primary mt-3">Tìm phòng ngay</a>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="text-secondary small mb-3">@_posts.Count tin đã lưu</div>
+        <div class="row g-3">
+            @foreach (var post in _posts)
+            {
+                var p = post;
+                var isPublic = PostRules.IsPublic(p.Status, p.ExpiredAt);
+                <div class="col-12 col-sm-6 col-lg-4 col-xl-3" @key="p.PostId">
+                    <div class="h-100 @(isPublic ? "" : "opacity-75")">
+                        <PostCard Post="p">
+                            <Actions>
+                                @if (!isPublic)
+                                {
+                                    <div class="mb-2"><Badge Text="Không còn hiển thị" Color="secondary" /></div>
+                                }
+                                <button class="btn btn-sm btn-outline-warning w-100" disabled="@(_busyId != null)" @onclick="() => UnsaveAsync(p)">
+                                    @if (_busyId == p.PostId) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                    else { <i class="bi bi-bookmark-x me-1"></i> }
+                                    Bỏ lưu
+                                </button>
+                            </Actions>
+                        </PostCard>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<PostSummaryDto>? _posts;
+    private string? _error;
+    private long? _busyId;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _posts = null;
+        try
+        {
+            _posts = await PostsApi.SavedAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task UnsaveAsync(PostSummaryDto p)
+    {
+        _busyId = p.PostId;
+        try
+        {
+            await PostsApi.UnsaveAsync(p.PostId);
+            _posts?.Remove(p);
+            Toast.Info("Đã bỏ lưu tin.");
+        }
+        catch (ApiException ex)
+        {
+            Toast.Error(ex);
+        }
+        finally
+        {
+            _busyId = null;
+        }
+    }
+}

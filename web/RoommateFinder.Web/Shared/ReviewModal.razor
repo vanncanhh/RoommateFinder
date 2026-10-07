@@ -1,0 +1,115 @@
+@* Hộp thoại đánh giá người ở ghép sau một lượt kết nối được chấp nhận (BR-05). *@
+@inject FeedbackApi FeedbackApi
+@inject ToastService Toast
+
+<Modal Show="Show" Title="@($"Đánh giá {RevieweeName}")" OnClose="CloseAsync" CloseOnBackdrop="!_busy">
+    <ChildContent>
+        <ErrorAlert Message="@_error" />
+        <div class="mb-3 text-center">
+            <div class="mb-1">Bạn đánh giá trải nghiệm với <strong>@RevieweeName</strong> thế nào?</div>
+            <Stars Value="_rating" ValueChanged="OnRatingChanged" Editable="true" />
+            <div class="small text-secondary">@(_rating > 0 ? RatingLabel((int)_rating) : "Chọn từ 1 đến 5 sao")</div>
+            @if (_ratingError != null)
+            {
+                <div class="text-danger small mt-1">@_ratingError</div>
+            }
+        </div>
+        <div>
+            <label class="form-label" for="reviewComment">Nhận xét <span class="text-secondary small">(không bắt buộc)</span></label>
+            <textarea id="reviewComment" class="form-control" rows="4" maxlength="500" @bind="_comment" @bind:event="oninput"
+                      placeholder="Chia sẻ trải nghiệm ở ghép, giao tiếp, giữ gìn vệ sinh…"></textarea>
+            <div class="form-text text-end @(_comment.Length > 500 ? "text-danger" : "")">@_comment.Length/500</div>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-outline-secondary" @onclick="CloseAsync" disabled="@_busy">Hủy</button>
+        <button type="button" class="btn btn-primary" @onclick="SubmitAsync" disabled="@_busy">
+            @if (_busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+            Gửi đánh giá
+        </button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public bool Show { get; set; }
+    [Parameter] public long RequestId { get; set; }
+    [Parameter] public string RevieweeName { get; set; } = "";
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<ReviewDto> OnSaved { get; set; }
+
+    private decimal _rating;
+    private string _comment = "";
+    private bool _busy;
+    private string? _error;
+    private string? _ratingError;
+    private long _formFor = -1;
+
+    protected override void OnParametersSet()
+    {
+        // Mở cho một lượt kết nối khác (hoặc mở lại) → làm mới form.
+        if (Show && _formFor != RequestId)
+        {
+            _formFor = RequestId;
+            _rating = 0;
+            _comment = "";
+            _error = null;
+            _ratingError = null;
+        }
+        if (!Show) _formFor = -1;
+    }
+
+    private void OnRatingChanged(decimal value)
+    {
+        _rating = value;
+        _ratingError = null;
+    }
+
+    private async Task SubmitAsync()
+    {
+        _error = null;
+        _ratingError = null;
+        if (_rating is < 1 or > 5)
+        {
+            _ratingError = "Vui lòng chọn số sao";
+            return;
+        }
+        var comment = _comment.Trim();
+        if (comment.Length > 500)
+        {
+            _error = "Nhận xét tối đa 500 ký tự.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var review = await FeedbackApi.ReviewAsync(new CreateReviewRequest
+            {
+                RequestId = RequestId,
+                Rating = (byte)_rating,
+                Comment = comment.Length == 0 ? null : comment,
+            });
+            Toast.Success("Cảm ơn bạn đã đánh giá!");
+            await OnSaved.InvokeAsync(review);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message; // chưa đủ số ngày, đã đánh giá rồi...
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private Task CloseAsync() => _busy ? Task.CompletedTask : OnClose.InvokeAsync();
+
+    private static string RatingLabel(int stars) => stars switch
+    {
+        1 => "Rất không hài lòng",
+        2 => "Không hài lòng",
+        3 => "Bình thường",
+        4 => "Hài lòng",
+        _ => "Rất hài lòng",
+    };
+}

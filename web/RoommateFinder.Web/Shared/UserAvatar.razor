@@ -1,0 +1,17 @@
+@inject ApiClient Api
+
+@if (!string.IsNullOrEmpty(Url))
+{
+    <img src="@Api.Url(Url)" alt="@Name" class="rounded-circle object-fit-cover flex-shrink-0" style="width:@(Size)px;height:@(Size)px" />
+}
+else
+{
+    <span class="rounded-circle bg-primary text-white d-inline-flex align-items-center justify-content-center flex-shrink-0 fw-semibold"
+          style="width:@(Size)px;height:@(Size)px;font-size:@(Size / 2.4)px">@Fmt.Initial(Name)</span>
+}
+
+@code {
+    [Parameter] public string? Name { get; set; }
+    [Parameter] public string? Url { get; set; }
+    [Parameter] public int Size { get; set; } = 40;
+}

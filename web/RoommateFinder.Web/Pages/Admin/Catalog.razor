@@ -1,0 +1,463 @@
+@page "/admin/catalog"
+@layout AdminLayout
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject AdminApi AdminApi
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>Danh mục – RoommateFinder</PageTitle>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <h1 class="h4 mb-0"><i class="bi bi-grid me-2"></i>Quản lý danh mục</h1>
+    <button class="btn btn-sm btn-primary" @onclick="OpenCreate" disabled="@(_loading || _error != null)"><i class="bi bi-plus-lg"></i> Thêm mới</button>
+</div>
+
+<ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto">
+    @foreach (var (key, label, icon) in Tabs)
+    {
+        <li class="nav-item">
+            <a class="nav-link text-nowrap @(CurrentTab == key ? "active" : "")" href="@TabHref(key)"><i class="bi @icon me-1"></i>@label</a>
+        </li>
+    }
+</ul>
+
+<p class="small text-secondary"><i class="bi bi-info-circle me-1"></i>Danh mục không xóa được — hãy tắt "Đang dùng" để ẩn thay vì xóa, để không ảnh hưởng dữ liệu cũ (tin đăng, báo cáo đã gắn với mục này).</p>
+
+@if (_loading)
+{
+    <Loading />
+}
+else if (_error != null)
+{
+    <ErrorAlert Message="@_error" OnRetry="LoadAsync" />
+}
+else
+{
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            @switch (CurrentTab)
+            {
+                case "areas":
+                    if (_areas.Count == 0) { <EmptyState Text="Chưa có khu vực nào." /> }
+                    else
+                    {
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light"><tr><th>Tên khu vực</th><th>Quận/huyện</th><th>Thành phố</th><th>Tọa độ tâm</th><th>Trạng thái</th><th></th></tr></thead>
+                            <tbody>
+                                @foreach (var a in _areas)
+                                {
+                                    <tr class="@(a.IsActive ? "" : "text-secondary")">
+                                        <td class="fw-semibold">@a.Name</td>
+                                        <td>@(a.District ?? "—")</td>
+                                        <td>@a.City</td>
+                                        <td class="small text-nowrap">@(a.Latitude != null && a.Longitude != null ? $"{a.Latitude}, {a.Longitude}" : "—")</td>
+                                        <td>@ActiveBadge(a.IsActive)</td>
+                                        <td class="text-end"><button class="btn btn-sm btn-outline-primary" @onclick="() => EditArea(a)"><i class="bi bi-pencil"></i> Sửa</button></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    break;
+
+                case "landmarks":
+                    if (_landmarks.Count == 0) { <EmptyState Text="Chưa có địa điểm nào." /> }
+                    else
+                    {
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light"><tr><th>Tên địa điểm</th><th>Loại</th><th>Khu vực</th><th>Địa chỉ</th><th>Tọa độ</th><th>Trạng thái</th><th></th></tr></thead>
+                            <tbody>
+                                @foreach (var l in _landmarks)
+                                {
+                                    <tr class="@(l.IsActive ? "" : "text-secondary")">
+                                        <td class="fw-semibold">@l.Name</td>
+                                        <td class="text-nowrap">@Labels.LandmarkType(l.Type)</td>
+                                        <td>@l.AreaName</td>
+                                        <td class="small">@(l.Address ?? "—")</td>
+                                        <td class="small text-nowrap">@l.Latitude, @l.Longitude</td>
+                                        <td>@ActiveBadge(l.IsActive)</td>
+                                        <td class="text-end"><button class="btn btn-sm btn-outline-primary" @onclick="() => EditLandmark(l)"><i class="bi bi-pencil"></i> Sửa</button></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    break;
+
+                case "amenities":
+                    if (_amenities.Count == 0) { <EmptyState Text="Chưa có tiện ích nào." /> }
+                    else
+                    {
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light"><tr><th>Tên tiện ích</th><th>Trạng thái</th><th></th></tr></thead>
+                            <tbody>
+                                @foreach (var a in _amenities)
+                                {
+                                    <tr class="@(a.IsActive ? "" : "text-secondary")">
+                                        <td class="fw-semibold">@a.Name</td>
+                                        <td>@ActiveBadge(a.IsActive)</td>
+                                        <td class="text-end"><button class="btn btn-sm btn-outline-primary" @onclick="() => EditAmenity(a)"><i class="bi bi-pencil"></i> Sửa</button></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    break;
+
+                default:
+                    if (_reasons.Count == 0) { <EmptyState Text="Chưa có lý do báo cáo nào." /> }
+                    else
+                    {
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light"><tr><th>Lý do báo cáo</th><th>Áp dụng cho</th><th>Trạng thái</th><th></th></tr></thead>
+                            <tbody>
+                                @foreach (var r in _reasons)
+                                {
+                                    <tr class="@(r.IsActive ? "" : "text-secondary")">
+                                        <td class="fw-semibold">@r.Name</td>
+                                        <td>@Labels.AppliesTo(r.AppliesTo)</td>
+                                        <td>@ActiveBadge(r.IsActive)</td>
+                                        <td class="text-end"><button class="btn btn-sm btn-outline-primary" @onclick="() => EditReason(r)"><i class="bi bi-pencil"></i> Sửa</button></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    break;
+            }
+        </div>
+    </div>
+}
+
+<Modal Show="_formOpen" Title="@FormTitle" OnClose="CloseForm" CloseOnBackdrop="false">
+    <ChildContent>
+        <form id="catalogForm" @onsubmit="SaveAsync" @onsubmit:preventDefault="true">
+            @switch (_formTab)
+            {
+                case "areas":
+                    <div class="mb-3">
+                        <label class="form-label" for="aName">Tên khu vực <span class="text-danger">*</span></label>
+                        <input id="aName" class="form-control" maxlength="100" @bind="_area.Name" placeholder="Ví dụ: Cầu Giấy" />
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-12 col-sm-6">
+                            <label class="form-label" for="aDistrict">Quận/huyện</label>
+                            <input id="aDistrict" class="form-control" maxlength="100" @bind="_area.District" />
+                        </div>
+                        <div class="col-12 col-sm-6">
+                            <label class="form-label" for="aCity">Thành phố <span class="text-danger">*</span></label>
+                            <input id="aCity" class="form-control" maxlength="100" @bind="_area.City" placeholder="Hà Nội" />
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-1">
+                        <div class="col-6">
+                            <label class="form-label" for="aLat">Vĩ độ tâm</label>
+                            <input id="aLat" type="number" step="any" min="-90" max="90" class="form-control" @bind="_area.Latitude" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label" for="aLng">Kinh độ tâm</label>
+                            <input id="aLng" type="number" step="any" min="-180" max="180" class="form-control" @bind="_area.Longitude" />
+                        </div>
+                    </div>
+                    <div class="form-text mb-3">Không bắt buộc; nếu nhập thì cần đủ cả vĩ độ và kinh độ. Dùng làm vị trí mặc định cho tin không có tọa độ.</div>
+                    break;
+
+                case "landmarks":
+                    <div class="mb-3">
+                        <label class="form-label" for="lName">Tên địa điểm <span class="text-danger">*</span></label>
+                        <input id="lName" class="form-control" maxlength="150" @bind="_landmark.Name" placeholder="Ví dụ: Đại học Quốc gia Hà Nội" />
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-12 col-sm-6">
+                            <label class="form-label" for="lType">Loại <span class="text-danger">*</span></label>
+                            <select id="lType" class="form-select" @bind="_landmark.Type">
+                                @foreach (var t in LandmarkType.All)
+                                {
+                                    <option value="@t">@Labels.LandmarkType(t)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-12 col-sm-6">
+                            <label class="form-label" for="lArea">Khu vực <span class="text-danger">*</span></label>
+                            <select id="lArea" class="form-select" @bind="_landmark.AreaId">
+                                <option value="0">— Chọn khu vực —</option>
+                                @foreach (var a in _areas)
+                                {
+                                    <option value="@a.AreaId">@a.Name@(a.IsActive ? "" : " (đã ẩn)")</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="lAddress">Địa chỉ</label>
+                        <input id="lAddress" class="form-control" maxlength="255" @bind="_landmark.Address" />
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label" for="lLat">Vĩ độ <span class="text-danger">*</span></label>
+                            <input id="lLat" type="number" step="any" min="-90" max="90" class="form-control" @bind="_landmarkLat" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label" for="lLng">Kinh độ <span class="text-danger">*</span></label>
+                            <input id="lLng" type="number" step="any" min="-180" max="180" class="form-control" @bind="_landmarkLng" />
+                        </div>
+                    </div>
+                    break;
+
+                case "amenities":
+                    <div class="mb-3">
+                        <label class="form-label" for="amName">Tên tiện ích <span class="text-danger">*</span></label>
+                        <input id="amName" class="form-control" maxlength="100" @bind="_amenity.Name" placeholder="Ví dụ: Máy giặt" />
+                    </div>
+                    break;
+
+                default:
+                    <div class="mb-3">
+                        <label class="form-label" for="rName">Lý do báo cáo <span class="text-danger">*</span></label>
+                        <input id="rName" class="form-control" maxlength="150" @bind="_reason.Name" placeholder="Ví dụ: Thông tin sai sự thật" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="rApplies">Áp dụng cho <span class="text-danger">*</span></label>
+                        <select id="rApplies" class="form-select" @bind="_reason.AppliesTo">
+                            @foreach (var v in ReasonAppliesTo.All)
+                            {
+                                <option value="@v">@Labels.AppliesTo(v)</option>
+                            }
+                        </select>
+                    </div>
+                    break;
+            }
+
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" role="switch" id="isActive" @bind="_isActive" />
+                <label class="form-check-label" for="isActive">Đang dùng (hiển thị cho người dùng)</label>
+            </div>
+            <div class="form-text">Ẩn thay vì xóa để không ảnh hưởng dữ liệu cũ.</div>
+
+            <ErrorAlert Message="@_formError" Class="mt-3 mb-0" />
+        </form>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-secondary" @onclick="CloseForm" disabled="@_busy">Hủy</button>
+        <button type="submit" form="catalogForm" class="btn btn-primary" disabled="@_busy">
+            @if (_busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+            Lưu
+        </button>
+    </Footer>
+</Modal>
+
+@code {
+    [SupplyParameterFromQuery] public string? Tab { get; set; }
+
+    private static readonly (string Key, string Label, string Icon)[] Tabs =
+    {
+        ("areas", "Khu vực", "bi-geo-alt"),
+        ("landmarks", "Địa điểm", "bi-building"),
+        ("amenities", "Tiện ích", "bi-stars"),
+        ("reasons", "Lý do báo cáo", "bi-flag"),
+    };
+
+    private List<AreaDto> _areas = new();
+    private List<LandmarkDto> _landmarks = new();
+    private List<AmenityDto> _amenities = new();
+    private List<ReportReasonDto> _reasons = new();
+    private bool _loading;
+    private string? _error;
+    private string? _loadedTab;
+
+    // Form
+    private bool _formOpen;
+    private string _formTab = "areas";
+    private int? _editId;
+    private bool _isActive = true;
+    private AreaUpsertRequest _area = new();
+    private LandmarkUpsertRequest _landmark = new();
+    private decimal? _landmarkLat;
+    private decimal? _landmarkLng;
+    private AmenityUpsertRequest _amenity = new();
+    private ReportReasonUpsertRequest _reason = new();
+    private string? _formError;
+    private bool _busy;
+
+    private string CurrentTab => Tabs.Any(t => t.Key == Tab) ? Tab! : "areas";
+
+    private string FormTitle => (_editId == null ? "Thêm " : "Sửa ") + _formTab switch
+    {
+        "areas" => "khu vực",
+        "landmarks" => "địa điểm",
+        "amenities" => "tiện ích",
+        _ => "lý do báo cáo",
+    };
+
+    private string TabHref(string key) => Nav.GetUriWithQueryParameter("tab", key == "areas" ? null : key);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedTab == CurrentTab) return;
+        _loadedTab = CurrentTab;
+        _formOpen = false;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            switch (CurrentTab)
+            {
+                case "areas":
+                    _areas = await AdminApi.AreasAsync();
+                    break;
+                case "landmarks":
+                    // Cần danh sách khu vực cho ô chọn trong form địa điểm
+                    var landmarks = AdminApi.LandmarksAsync();
+                    var areas = AdminApi.AreasAsync();
+                    _landmarks = await landmarks;
+                    _areas = await areas;
+                    break;
+                case "amenities":
+                    _amenities = await AdminApi.AmenitiesAsync();
+                    break;
+                default:
+                    _reasons = await AdminApi.ReportReasonsAsync();
+                    break;
+            }
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private RenderFragment ActiveBadge(bool active) => active
+        ? @<span class="badge text-bg-success">Đang dùng</span>
+        : @<span class="badge text-bg-secondary">Đã ẩn</span>;
+
+    private void OpenForm(int? id, bool isActive)
+    {
+        _formTab = CurrentTab;
+        _editId = id;
+        _isActive = isActive;
+        _formError = null;
+        _formOpen = true;
+    }
+
+    private void CloseForm() => _formOpen = false;
+
+    private void OpenCreate()
+    {
+        _area = new AreaUpsertRequest { City = "Hà Nội" };
+        _landmark = new LandmarkUpsertRequest { Type = LandmarkType.School };
+        _landmarkLat = null;
+        _landmarkLng = null;
+        _amenity = new AmenityUpsertRequest();
+        _reason = new ReportReasonUpsertRequest { AppliesTo = ReasonAppliesTo.Both };
+        OpenForm(null, true);
+    }
+
+    private void EditArea(AreaDto a)
+    {
+        _area = new AreaUpsertRequest { Name = a.Name, District = a.District, City = a.City, Latitude = a.Latitude, Longitude = a.Longitude };
+        OpenForm(a.AreaId, a.IsActive);
+    }
+
+    private void EditLandmark(LandmarkDto l)
+    {
+        _landmark = new LandmarkUpsertRequest { Name = l.Name, Type = l.Type, AreaId = l.AreaId, Address = l.Address };
+        _landmarkLat = l.Latitude;
+        _landmarkLng = l.Longitude;
+        OpenForm(l.LandmarkId, l.IsActive);
+    }
+
+    private void EditAmenity(AmenityDto a)
+    {
+        _amenity = new AmenityUpsertRequest { Name = a.Name };
+        OpenForm(a.AmenityId, a.IsActive);
+    }
+
+    private void EditReason(ReportReasonDto r)
+    {
+        _reason = new ReportReasonUpsertRequest { Name = r.Name, AppliesTo = r.AppliesTo };
+        OpenForm(r.ReasonId, r.IsActive);
+    }
+
+    private static string? Trimmed(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    private static string? CheckText(string? value, int max, string field, bool required)
+    {
+        var v = value?.Trim() ?? "";
+        if (required && v.Length == 0) return $"{field} không được để trống.";
+        if (v.Length > max) return $"{field} tối đa {max} ký tự.";
+        return null;
+    }
+
+    private static bool LatOk(decimal? v) => v is null or (>= -90 and <= 90);
+    private static bool LngOk(decimal? v) => v is null or (>= -180 and <= 180);
+
+    private string? Validate() => _formTab switch
+    {
+        "areas" => CheckText(_area.Name, 100, "Tên khu vực", true)
+                   ?? CheckText(_area.City, 100, "Thành phố", true)
+                   ?? CheckText(_area.District, 100, "Quận/huyện", false)
+                   ?? (_area.Latitude.HasValue != _area.Longitude.HasValue ? "Cần nhập đủ cả vĩ độ và kinh độ (hoặc bỏ trống cả hai)." : null)
+                   ?? (!LatOk(_area.Latitude) || !LngOk(_area.Longitude) ? "Tọa độ không hợp lệ (vĩ độ −90..90, kinh độ −180..180)." : null),
+        "landmarks" => CheckText(_landmark.Name, 150, "Tên địa điểm", true)
+                   ?? CheckText(_landmark.Address, 255, "Địa chỉ", false)
+                   ?? (_landmark.AreaId <= 0 ? "Vui lòng chọn khu vực." : null)
+                   ?? (_landmarkLat == null || _landmarkLng == null ? "Vui lòng nhập vĩ độ và kinh độ." : null)
+                   ?? (!LatOk(_landmarkLat) || !LngOk(_landmarkLng) ? "Tọa độ không hợp lệ (vĩ độ −90..90, kinh độ −180..180)." : null),
+        "amenities" => CheckText(_amenity.Name, 100, "Tên tiện ích", true),
+        _ => CheckText(_reason.Name, 150, "Tên lý do", true),
+    };
+
+    private async Task SaveAsync()
+    {
+        _formError = Validate();
+        if (_formError != null) return;
+
+        _busy = true;
+        try
+        {
+            switch (_formTab)
+            {
+                case "areas":
+                    await AdminApi.SaveAreaAsync(_editId, new AreaUpsertRequest
+                    {
+                        Name = _area.Name.Trim(), District = Trimmed(_area.District), City = _area.City.Trim(),
+                        Latitude = _area.Latitude, Longitude = _area.Longitude, IsActive = _isActive,
+                    });
+                    break;
+                case "landmarks":
+                    await AdminApi.SaveLandmarkAsync(_editId, new LandmarkUpsertRequest
+                    {
+                        Name = _landmark.Name.Trim(), Type = _landmark.Type, AreaId = _landmark.AreaId, Address = Trimmed(_landmark.Address),
+                        Latitude = _landmarkLat!.Value, Longitude = _landmarkLng!.Value, IsActive = _isActive,
+                    });
+                    break;
+                case "amenities":
+                    await AdminApi.SaveAmenityAsync(_editId, new AmenityUpsertRequest { Name = _amenity.Name.Trim(), IsActive = _isActive });
+                    break;
+                default:
+                    await AdminApi.SaveReportReasonAsync(_editId, new ReportReasonUpsertRequest { Name = _reason.Name.Trim(), AppliesTo = _reason.AppliesTo, IsActive = _isActive });
+                    break;
+            }
+            Toast.Success(_editId == null ? "Đã thêm mới." : "Đã lưu thay đổi.");
+            _formOpen = false;
+            await LoadAsync();
+        }
+        catch (ApiException ex)
+        {
+            _formError = ex.Message; // trùng tên (409), dữ liệu không hợp lệ...
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

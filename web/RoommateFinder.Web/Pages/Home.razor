@@ -1,0 +1,174 @@
+@page "/"
+@inject PostsApi PostsApi
+@inject CatalogApi CatalogApi
+@inject AuthSession Session
+@inject NavigationManager Nav
+
+<PageTitle>RoommateFinder – Tìm người ở ghép</PageTitle>
+
+<section class="bg-primary text-white py-5">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-12 col-lg-9 text-center">
+                <h1 class="fw-bold mb-2">Tìm bạn ở ghép phù hợp lối sống</h1>
+                <p class="lead mb-4 opacity-75">Hàng trăm phòng đang cần người ở ghép và những người đang tìm phòng gần trường, gần công ty bạn.</p>
+                <form class="card border-0 shadow" @onsubmit="Search" @onsubmit:preventDefault="true">
+                    <div class="card-body p-2">
+                        <div class="row g-2">
+                            <div class="col-12 col-md-6">
+                                <div class="input-group">
+                                    <span class="input-group-text bg-white border-end-0"><i class="bi bi-search"></i></span>
+                                    <input class="form-control border-start-0" placeholder="Từ khóa: tên đường, trường học, tiện ích…"
+                                           @bind="_keyword" aria-label="Từ khóa" maxlength="100" />
+                                </div>
+                            </div>
+                            <div class="col-12 col-sm-8 col-md-4">
+                                <select class="form-select" @bind="_areaId" aria-label="Khu vực">
+                                    <option value="0">Tất cả khu vực</option>
+                                    @if (_areas != null)
+                                    {
+                                        @foreach (var a in _areas)
+                                        {
+                                            <option value="@a.AreaId">@AreaText(a)</option>
+                                        }
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-12 col-sm-4 col-md-2 d-grid">
+                                <button type="submit" class="btn btn-primary">Tìm kiếm</button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+                <div class="mt-3 d-flex flex-wrap justify-content-center gap-2">
+                    <a class="btn btn-sm btn-light" href="/search?postType=@PostType.HasRoom"><i class="bi bi-house-door me-1"></i>Phòng cần người ở ghép</a>
+                    <a class="btn btn-sm btn-outline-light" href="/search?postType=@PostType.Seeking"><i class="bi bi-person-badge me-1"></i>Người đang tìm phòng</a>
+                    @if (Session.IsAuthenticated)
+                    {
+                        <a class="btn btn-sm btn-warning" href="/posts/new"><i class="bi bi-plus-circle me-1"></i>Đăng tin miễn phí</a>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="container py-5">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h2 class="h4 mb-0">Tin mới nhất</h2>
+        <a href="/search" class="small">Xem tất cả <i class="bi bi-arrow-right"></i></a>
+    </div>
+
+    @if (_error != null)
+    {
+        <ErrorAlert Message="@_error" OnRetry="LoadPostsAsync" />
+    }
+    else if (_posts == null)
+    {
+        <Loading />
+    }
+    else if (_posts.Count == 0)
+    {
+        <EmptyState Text="Chưa có tin đăng nào." Icon="bi-house">
+            @if (Session.IsAuthenticated)
+            {
+                <a href="/posts/new" class="btn btn-primary mt-3">Đăng tin đầu tiên</a>
+            }
+        </EmptyState>
+    }
+    else
+    {
+        <div class="row g-3">
+            @foreach (var p in _posts)
+            {
+                <div class="col-12 col-sm-6 col-lg-3" @key="p.PostId">
+                    <PostCard Post="p" />
+                </div>
+            }
+        </div>
+    }
+</section>
+
+<section class="bg-white border-top border-bottom py-5">
+    <div class="container">
+        <h2 class="h4 text-center mb-4">Cách RoommateFinder hoạt động</h2>
+        <div class="row g-4 text-center">
+            @foreach (var (icon, title, text) in Steps)
+            {
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <div class="rounded-circle bg-primary-subtle text-primary d-inline-flex align-items-center justify-content-center mb-3" style="width:64px;height:64px">
+                        <i class="bi @icon fs-3"></i>
+                    </div>
+                    <h3 class="h6 fw-semibold">@title</h3>
+                    <p class="text-secondary small mb-0">@text</p>
+                </div>
+            }
+        </div>
+        @if (!Session.IsAuthenticated)
+        {
+            <div class="text-center mt-4">
+                <a href="/register" class="btn btn-primary">Đăng ký miễn phí</a>
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    private static readonly (string Icon, string Title, string Text)[] Steps =
+    {
+        ("bi-search", "1. Tìm kiếm", "Lọc theo khu vực, giá, tiện ích hoặc khoảng cách tới trường học, công ty."),
+        ("bi-send", "2. Gửi yêu cầu kết nối", "Gửi lời nhắn tới chủ tin. Số điện thoại chỉ hiện khi yêu cầu được chấp nhận."),
+        ("bi-chat-dots", "3. Trò chuyện", "Trao đổi trực tiếp trong ứng dụng để hiểu lối sống của nhau trước khi quyết định."),
+        ("bi-star", "4. Đánh giá", "Sau khi ở ghép, đánh giá lẫn nhau để cộng đồng an toàn và tin cậy hơn."),
+    };
+
+    private List<PostSummaryDto>? _posts;
+    private List<AreaDto>? _areas;
+    private string? _error;
+    private string? _keyword;
+    private int _areaId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var areasTask = LoadAreasAsync();
+        await LoadPostsAsync();
+        await areasTask;
+    }
+
+    private async Task LoadAreasAsync()
+    {
+        try
+        {
+            _areas = await CatalogApi.AreasAsync();
+        }
+        catch (ApiException)
+        {
+            _areas = new(); // không chặn trang chủ nếu danh mục lỗi
+        }
+    }
+
+    private async Task LoadPostsAsync()
+    {
+        _error = null;
+        _posts = null;
+        try
+        {
+            _posts = await PostsApi.LatestAsync(8);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private static string AreaText(AreaDto a) => string.IsNullOrEmpty(a.District) ? $"{a.Name}, {a.City}" : $"{a.Name} ({a.District})";
+
+    private void Search()
+    {
+        var url = new Query()
+            .Add("keyword", _keyword?.Trim())
+            .Add("areaId", _areaId > 0 ? _areaId : (int?)null)
+            .For("/search");
+        Nav.NavigateTo(url);
+    }
+}

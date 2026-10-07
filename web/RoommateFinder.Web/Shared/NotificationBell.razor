@@ -1,0 +1,145 @@
+@implements IDisposable
+@inject NotificationsApi NotificationsApi
+@inject RealtimeService Realtime
+@inject AuthSession Session
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<div class="position-relative">
+    <button class="btn btn-link text-body position-relative p-1" aria-label="Thông báo" @onclick="ToggleAsync">
+        <i class="bi bi-bell fs-5"></i>
+        @if (_unread > 0)
+        {
+            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">@(_unread > 99 ? "99+" : _unread)</span>
+        }
+    </button>
+    @if (_open)
+    {
+        <div class="position-fixed top-0 start-0 w-100 h-100" style="z-index:1000" @onclick="() => _open = false"></div>
+        <div class="dropdown-menu dropdown-menu-end show shadow notif-menu p-0" style="right:0;left:auto;z-index:1001">
+            <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
+                <strong>Thông báo</strong>
+                @if (_unread > 0)
+                {
+                    <button class="btn btn-link btn-sm p-0" @onclick="MarkAllAsync">Đánh dấu đã đọc tất cả</button>
+                }
+            </div>
+            @if (_items == null)
+            {
+                <Loading Small="true" />
+            }
+            else if (_items.Count == 0)
+            {
+                <div class="text-center text-secondary py-4 small">Chưa có thông báo</div>
+            }
+            else
+            {
+                @foreach (var n in _items)
+                {
+                    <button class="dropdown-item notif-item text-wrap py-2 border-bottom @(n.IsRead ? "" : "unread")" @onclick="() => OpenAsync(n)">
+                        <div class="small">@n.Content</div>
+                        <div class="text-secondary" style="font-size:.75rem">@Fmt.Relative(n.CreatedAt)</div>
+                    </button>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _open;
+    private int _unread;
+    private List<NotificationDto>? _items;
+    private Timer? _poll;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Realtime.NotificationReceived += OnNotification;
+        Realtime.NotificationConnectionChanged += OnConnectionChanged;
+        // Dự phòng: khi mất kết nối realtime thì 30 giây tải lại số chưa đọc một lần.
+        _poll = new Timer(_ => { if (!Realtime.IsNotificationConnected) InvokeAsync(RefreshCountAsync); }, null, 30_000, 30_000);
+        await RefreshCountAsync();
+    }
+
+    private async Task RefreshCountAsync()
+    {
+        try
+        {
+            _unread = await NotificationsApi.UnreadCountAsync();
+            StateHasChanged();
+        }
+        catch (ApiException) { /* bỏ qua: chuông không quan trọng bằng trang chính */ }
+    }
+
+    private async Task ToggleAsync()
+    {
+        _open = !_open;
+        if (_open) await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _items = (await NotificationsApi.ListAsync(1, 15)).Items.ToList();
+        }
+        catch (ApiException ex)
+        {
+            _items = new();
+            Toast.Error(ex);
+        }
+    }
+
+    private async Task OpenAsync(NotificationDto n)
+    {
+        _open = false;
+        if (!n.IsRead)
+        {
+            try { await NotificationsApi.MarkReadAsync(n.NotificationId); _unread = Math.Max(0, _unread - 1); } catch (ApiException) { }
+        }
+        if (!string.IsNullOrEmpty(n.Link)) Nav.NavigateTo(n.Link);
+    }
+
+    private async Task MarkAllAsync()
+    {
+        try
+        {
+            await NotificationsApi.MarkAllReadAsync();
+            _unread = 0;
+            await LoadAsync();
+        }
+        catch (ApiException ex) { Toast.Error(ex); }
+    }
+
+    private void OnNotification(NotificationDto n)
+    {
+        InvokeAsync(async () =>
+        {
+            _unread++;
+            if (_items != null) _items.Insert(0, n);
+            if (n.Type == NotificationType.RoleChanged)
+            {
+                // Vai trò đổi thì token cũ bị server từ chối → đăng nhập lại để nhận quyền mới.
+                Toast.Warning("Vai trò của bạn đã thay đổi. Vui lòng đăng nhập lại.");
+                await Session.LogoutAsync();
+                Nav.NavigateTo("/login");
+                return;
+            }
+            Toast.Info(n.Content);
+            StateHasChanged();
+        });
+    }
+
+    /// <summary>Tái kết nối: tải lại số chưa đọc (thông báo phát ra lúc mất kết nối không được đẩy lại).</summary>
+    private void OnConnectionChanged(bool connected)
+    {
+        if (connected) InvokeAsync(RefreshCountAsync);
+    }
+
+    public void Dispose()
+    {
+        Realtime.NotificationReceived -= OnNotification;
+        Realtime.NotificationConnectionChanged -= OnConnectionChanged;
+        _poll?.Dispose();
+    }
+}

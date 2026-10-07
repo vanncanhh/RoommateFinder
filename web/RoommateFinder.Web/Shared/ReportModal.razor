@@ -1,0 +1,132 @@
+@* Hộp thoại báo cáo tin đăng (PostId) hoặc người dùng (ReportedUserId) — truyền đúng một trong hai. *@
+@inject CatalogApi CatalogApi
+@inject FeedbackApi FeedbackApi
+@inject ToastService Toast
+
+<Modal Show="Show" Title="@(IsPost ? "Báo cáo tin đăng" : "Báo cáo người dùng")" OnClose="CloseAsync" CloseOnBackdrop="!_busy">
+    <ChildContent>
+        @if (_loadError != null)
+        {
+            <ErrorAlert Message="@_loadError" OnRetry="LoadReasonsAsync" />
+        }
+        else if (_reasons == null)
+        {
+            <Loading Small="true" />
+        }
+        else
+        {
+            <ErrorAlert Message="@_error" />
+            <div class="mb-3">
+                <label class="form-label" for="report-reason">Lý do <span class="text-danger">*</span></label>
+                <select id="report-reason" class="form-select @(_submitted && _reasonId == 0 ? "is-invalid" : "")" @bind="_reasonId">
+                    <option value="0">-- Chọn lý do --</option>
+                    @foreach (var r in _reasons)
+                    {
+                        <option value="@r.ReasonId">@r.Name</option>
+                    }
+                </select>
+                <div class="invalid-feedback">Vui lòng chọn lý do báo cáo.</div>
+            </div>
+            <div class="mb-1">
+                <label class="form-label" for="report-desc">Mô tả thêm (không bắt buộc)</label>
+                <textarea id="report-desc" class="form-control @(DescriptionTooLong ? "is-invalid" : "")" rows="4" maxlength="500"
+                          @bind="_description" @bind:event="oninput" placeholder="Mô tả cụ thể vấn đề bạn gặp phải…"></textarea>
+                <div class="form-text text-end">@(_description?.Length ?? 0)/500</div>
+            </div>
+            <div class="small text-secondary">Báo cáo của bạn được giữ kín và sẽ do kiểm duyệt viên xem xét.</div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-outline-secondary" @onclick="CloseAsync" disabled="@_busy">Hủy</button>
+        <button type="button" class="btn btn-danger" @onclick="SubmitAsync" disabled="@(_busy || _reasons == null)">
+            @if (_busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+            Gửi báo cáo
+        </button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public bool Show { get; set; }
+    [Parameter] public long? PostId { get; set; }
+    [Parameter] public long? ReportedUserId { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private bool IsPost => PostId.HasValue;
+    private bool DescriptionTooLong => (_description?.Length ?? 0) > 500;
+
+    private List<ReportReasonDto>? _reasons;
+    private string? _loadedFor;
+    private string? _loadError;
+    private string? _error;
+    private int _reasonId;
+    private string? _description;
+    private bool _busy;
+    private bool _submitted;
+    private bool _wasShown;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Show && !_wasShown)
+        {
+            // Mở lại hộp thoại: xóa dữ liệu lần trước.
+            _reasonId = 0;
+            _description = null;
+            _error = null;
+            _submitted = false;
+            var kind = IsPost ? ReasonAppliesTo.Post : ReasonAppliesTo.User;
+            if (_loadedFor != kind) await LoadReasonsAsync();
+        }
+        _wasShown = Show;
+    }
+
+    private async Task LoadReasonsAsync()
+    {
+        var kind = IsPost ? ReasonAppliesTo.Post : ReasonAppliesTo.User;
+        _loadError = null;
+        _reasons = null;
+        try
+        {
+            _reasons = (await CatalogApi.ReportReasonsAsync(kind)).Where(r => r.IsActive).ToList();
+            _loadedFor = kind;
+        }
+        catch (ApiException ex)
+        {
+            _loadError = ex.Message;
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        _submitted = true;
+        _error = null;
+        if (_reasonId == 0 || DescriptionTooLong) return;
+        _busy = true;
+        try
+        {
+            var res = await FeedbackApi.ReportAsync(new CreateReportRequest
+            {
+                PostId = PostId,
+                ReportedUserId = PostId.HasValue ? null : ReportedUserId,
+                ReasonId = _reasonId,
+                Description = string.IsNullOrWhiteSpace(_description) ? null : _description.Trim(),
+            });
+            Toast.Success(res.Message);
+            _busy = false;
+            await OnClose.InvokeAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        if (_busy) return;
+        await OnClose.InvokeAsync();
+    }
+}

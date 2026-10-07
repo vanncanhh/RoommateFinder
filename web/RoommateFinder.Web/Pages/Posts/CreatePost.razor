@@ -1,0 +1,24 @@
+@page "/posts/new"
+@attribute [Authorize]
+@inject PostsApi PostsApi
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>Đăng tin mới – RoommateFinder</PageTitle>
+
+<div class="container py-4" style="max-width:960px">
+    <h1 class="h4 mb-1">Đăng tin mới</h1>
+    <p class="text-secondary mb-4">Tin sẽ được kiểm duyệt viên xem xét trước khi hiển thị công khai.</p>
+
+    <PostForm SubmitText="Đăng tin" CancelHref="/my-posts" OnSubmit="SubmitAsync" />
+</div>
+
+@code {
+    private async Task SubmitAsync(PostForm.Submission s)
+    {
+        // Lỗi ApiException được PostForm hiển thị.
+        var created = await PostsApi.CreateAsync(s.Data, s.Images, PostRules.MaxImageBytes);
+        Toast.Success("Đã gửi tin, đang chờ duyệt");
+        Nav.NavigateTo($"/posts/{created.PostId}");
+    }
+}

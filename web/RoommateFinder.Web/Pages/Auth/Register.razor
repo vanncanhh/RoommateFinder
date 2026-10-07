@@ -1,0 +1,118 @@
+@page "/register"
+@using System.ComponentModel.DataAnnotations
+@inject AuthApi AuthApi
+@inject AuthSession Session
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>Đăng ký – RoommateFinder</PageTitle>
+
+<div class="container py-5" style="max-width:480px">
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-4">
+            <h1 class="h4 mb-1">Tạo tài khoản</h1>
+            <p class="text-secondary mb-4">Tìm người ở ghép an toàn, phù hợp lối sống</p>
+
+            <ErrorAlert Message="@_error" />
+
+            <EditForm Model="_model" OnValidSubmit="SubmitAsync" FormName="register">
+                <DataAnnotationsValidator />
+                <div class="mb-3">
+                    <label class="form-label" for="fullName">Họ và tên</label>
+                    <InputText id="fullName" class="form-control" @bind-Value="_model.FullName" autocomplete="name" placeholder="Nguyễn Văn A" />
+                    <ValidationMessage For="() => _model.FullName" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="email">Email</label>
+                    <InputText id="email" type="email" class="form-control" @bind-Value="_model.Email" autocomplete="email" placeholder="email@example.com" />
+                    <ValidationMessage For="() => _model.Email" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="phone">Số điện thoại <span class="text-secondary small">(không bắt buộc)</span></label>
+                    <InputText id="phone" type="tel" class="form-control" @bind-Value="_model.Phone" autocomplete="tel" placeholder="0912345678" />
+                    <ValidationMessage For="() => _model.Phone" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="password">Mật khẩu</label>
+                    <InputText id="password" type="password" class="form-control" @bind-Value="_model.Password" autocomplete="new-password" />
+                    <div class="form-text">@PasswordPolicy.Message</div>
+                    <ValidationMessage For="() => _model.Password" />
+                </div>
+                <div class="mb-4">
+                    <label class="form-label" for="confirm">Nhập lại mật khẩu</label>
+                    <InputText id="confirm" type="password" class="form-control" @bind-Value="_model.ConfirmPassword" autocomplete="new-password" />
+                    <ValidationMessage For="() => _model.ConfirmPassword" />
+                </div>
+                <button type="submit" class="btn btn-primary w-100" disabled="@_busy">
+                    @if (_busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                    Đăng ký
+                </button>
+            </EditForm>
+
+            <div class="text-center mt-3 small">Đã có tài khoản? <a href="/login">Đăng nhập</a></div>
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>Khớp PasswordPolicy.IsStrong ở backend: 8–100 ký tự, có chữ hoa, chữ thường, chữ số.</summary>
+    private const string StrongPassword = @"^(?=.*\p{Lu})(?=.*\p{Ll})(?=.*\d).{8,100}$";
+
+    private readonly RegisterModel _model = new();
+    private bool _busy;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        if (Session.IsAuthenticated) Nav.NavigateTo("/", replace: true);
+    }
+
+    private async Task SubmitAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await AuthApi.RegisterAsync(new RegisterRequest
+            {
+                FullName = _model.FullName.Trim(),
+                Email = _model.Email.Trim(),
+                Phone = string.IsNullOrWhiteSpace(_model.Phone) ? null : _model.Phone.Trim(),
+                Password = _model.Password,
+            });
+            Toast.Success("Đăng ký thành công! Vui lòng đăng nhập.");
+            Nav.NavigateTo("/login");
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message; // email trùng (409), dữ liệu không hợp lệ (400)
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private class RegisterModel
+    {
+        [Required(ErrorMessage = "Vui lòng nhập họ tên")]
+        [StringLength(100, MinimumLength = 2, ErrorMessage = "Họ tên phải từ 2 đến 100 ký tự")]
+        public string FullName { get; set; } = "";
+
+        [Required(ErrorMessage = "Vui lòng nhập email")]
+        [EmailAddress(ErrorMessage = "Email không hợp lệ")]
+        [StringLength(100, ErrorMessage = "Email tối đa 100 ký tự")]
+        public string Email { get; set; } = "";
+
+        [RegularExpression(@"^\s*0\d{9,10}\s*$", ErrorMessage = "Số điện thoại không hợp lệ (10–11 chữ số, bắt đầu bằng 0)")]
+        public string? Phone { get; set; }
+
+        [Required(ErrorMessage = "Vui lòng nhập mật khẩu")]
+        [RegularExpression(StrongPassword, ErrorMessage = PasswordPolicy.Message)]
+        public string Password { get; set; } = "";
+
+        [Required(ErrorMessage = "Vui lòng nhập lại mật khẩu")]
+        [Compare(nameof(Password), ErrorMessage = "Mật khẩu nhập lại không khớp")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+}

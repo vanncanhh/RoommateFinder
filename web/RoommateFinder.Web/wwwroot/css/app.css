@@ -1,0 +1,177 @@
+:root {
+    --rf-primary: #0d6efd;
+    --rf-bg: #f5f6f8;
+}
+
+html, body {
+    background: var(--rf-bg);
+}
+
+body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+#blazor-error-ui {
+    z-index: 2000;
+}
+
+#blazor-error-ui:not(.d-none) {
+    display: block;
+}
+
+.rf-main {
+    min-height: calc(100vh - 140px);
+}
+
+.navbar-brand .bi {
+    font-size: 1.4rem;
+}
+
+/* Blazor đặt focus vào h1 sau mỗi lần chuyển trang (FocusOnNavigate, hỗ trợ trình đọc màn hình) — không vẽ viền focus. */
+h1:focus,
+h1:focus-visible {
+    outline: none;
+}
+
+/* Màn hình hẹp: logo + chuông + avatar + nút menu nằm gọn một hàng. */
+@media (max-width: 400px) {
+    .navbar-brand {
+        font-size: 1.1rem;
+        margin-right: .25rem;
+    }
+
+    .navbar-toggler {
+        padding: .25rem .5rem;
+    }
+}
+
+/* Thẻ tin đăng */
+.post-card {
+    transition: box-shadow .15s ease, transform .15s ease;
+}
+
+.post-card:hover {
+    box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .08);
+    transform: translateY(-2px);
+}
+
+.post-card .thumb {
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    background: #e9ecef;
+}
+
+.post-card .thumb-placeholder {
+    aspect-ratio: 4 / 3;
+    background: #e9ecef;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #adb5bd;
+    font-size: 2.5rem;
+}
+
+.text-truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Chuông thông báo */
+.notif-menu {
+    width: min(380px, 92vw);
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.notif-item.unread {
+    background: #eef4ff;
+}
+
+/* Chat */
+.chat-wrap {
+    height: calc(100vh - 190px);
+    min-height: 420px;
+}
+
+.chat-list {
+    overflow-y: auto;
+}
+
+.chat-messages {
+    overflow-y: auto;
+    background: #fafbfc;
+}
+
+.bubble {
+    max-width: 75%;
+    word-break: break-word;
+}
+
+/* Chỉ phần nội dung giữ xuống dòng của người gửi; áp lên cả khung sẽ hiện khoảng trắng của mã Razor. */
+.bubble-text {
+    white-space: pre-wrap;
+}
+
+.bubble.mine {
+    background: var(--rf-primary);
+    color: #fff;
+}
+
+.bubble.mine .text-muted {
+    color: rgba(255, 255, 255, .8) !important;
+}
+
+/* Console moderator/admin */
+.console-nav .nav-link {
+    color: #495057;
+    border-radius: .375rem;
+}
+
+.console-nav .nav-link.active {
+    background: var(--rf-primary);
+    color: #fff;
+}
+
+.gallery-main {
+    aspect-ratio: 16 / 10;
+    object-fit: cover;
+    background: #e9ecef;
+}
+
+.gallery-thumb {
+    width: 84px;
+    height: 64px;
+    object-fit: cover;
+    cursor: pointer;
+    opacity: .7;
+}
+
+.gallery-thumb.active {
+    opacity: 1;
+    outline: 2px solid var(--rf-primary);
+}
+
+.star {
+    color: #ffc107;
+}
+
+.toast-container {
+    z-index: 1090;
+}
+
+/* Biểu đồ cột đơn giản (dashboard) */
+.bar-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 160px;
+}
+
+.bar-chart .bar {
+    flex: 1;
+    background: var(--rf-primary);
+    border-radius: 2px 2px 0 0;
+    min-height: 2px;
+}

@@ -1,0 +1,553 @@
+@* Form đăng / sửa tin dùng chung. Existing != null → chế độ sửa (không đổi loại tin, có danh sách ảnh cũ để giữ/bỏ).
+   OnSubmit nhận dữ liệu + danh sách IBrowserFile mới; trang cha gọi API ngay trong lời gọi này (luồng file chỉ đọc được lúc đó)
+   và ném ApiException khi lỗi — form tự hiển thị lỗi. *@
+@inject CatalogApi CatalogApi
+@inject ApiClient Api
+
+@if (_catalogError != null)
+{
+    <ErrorAlert Message="@_catalogError" OnRetry="LoadCatalogAsync" />
+}
+else if (_areas == null || _amenities == null)
+{
+    <Loading />
+}
+else
+{
+    <form @onsubmit="SubmitAsync" @onsubmit:preventDefault="true" novalidate>
+
+        @* ---------------------------------------------------------------- Loại tin *@
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-body">
+                <h2 class="h6 fw-semibold mb-3">Loại tin</h2>
+                <div class="row g-2">
+                    @foreach (var t in PostType.All)
+                    {
+                        var type = t;
+                        <div class="col-12 col-md-6">
+                            <input type="radio" class="btn-check" name="post-type" id="pt-@type" autocomplete="off"
+                                   checked="@(_m.PostType == type)" disabled="@(IsEdit || _busy)" @onchange="() => _m.PostType = type" />
+                            <label class="btn btn-outline-primary w-100 text-start py-2" for="pt-@type">
+                                <i class="bi @(type == PostType.HasRoom ? "bi-house-door" : "bi-person-badge") me-2"></i>@Labels.PostType(type)
+                            </label>
+                        </div>
+                    }
+                </div>
+                @if (IsEdit)
+                {
+                    <div class="form-text">Không thể đổi loại tin sau khi đăng. Hãy đăng tin mới nếu cần.</div>
+                }
+                @if (Err("postType") is { } ptErr)
+                {
+                    <div class="text-danger small mt-1">@ptErr</div>
+                }
+            </div>
+        </div>
+
+        @* ---------------------------------------------------------------- Thông tin chính *@
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-body">
+                <h2 class="h6 fw-semibold mb-3">Thông tin tin đăng</h2>
+
+                <div class="mb-3">
+                    <label class="form-label" for="pf-title">Tiêu đề <span class="text-danger">*</span></label>
+                    <input id="pf-title" class="form-control @Invalid("title")" maxlength="150" @bind="_m.Title" @bind:event="oninput"
+                           placeholder="@(IsHasRoom ? "VD: Phòng 25m² gần ĐH Bách Khoa, cần 1 bạn nữ ở ghép" : "VD: Nam sinh viên tìm phòng ở ghép quanh Cầu Giấy")" />
+                    <div class="d-flex justify-content-between">
+                        <div class="invalid-feedback d-block">@Err("title")</div>
+                        <div class="form-text text-nowrap ms-2">@(_m.Title.Trim().Length)/150</div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="pf-desc">Mô tả</label>
+                    <textarea id="pf-desc" class="form-control @Invalid("description")" rows="6" maxlength="2000"
+                              @bind="_m.Description" @bind:event="oninput"
+                              placeholder="Mô tả phòng, giờ giấc sinh hoạt, chi phí điện nước, yêu cầu với người ở ghép…"></textarea>
+                    <div class="d-flex justify-content-between">
+                        <div class="invalid-feedback d-block">@Err("description")</div>
+                        <div class="form-text text-nowrap ms-2">@(_m.Description?.Length ?? 0)/2000</div>
+                    </div>
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="pf-price">@PriceLabel <span class="text-danger">*</span></label>
+                        <div class="input-group has-validation">
+                            <input id="pf-price" type="number" class="form-control @Invalid("price")" min="1" max="1000000000" step="1000"
+                                   @bind="_m.Price" @bind:event="oninput" placeholder="VD: 1800000" />
+                            <span class="input-group-text">đ</span>
+                            <div class="invalid-feedback">@Err("price")</div>
+                        </div>
+                        @if (_m.Price is > 0 and <= MaxPrice)
+                        {
+                            <div class="form-text text-success">@Fmt.Money(_m.Price.Value) @PostRules.PriceLabel(_m.PostType)</div>
+                        }
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="pf-gender">Giới tính mong muốn</label>
+                        <select id="pf-gender" class="form-select" @bind="_m.PreferredGender">
+                            <option value="@Gender.Any">Không yêu cầu</option>
+                            <option value="@Gender.Male">Nam</option>
+                            <option value="@Gender.Female">Nữ</option>
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" for="pf-current">@CurrentLabel</label>
+                        <input id="pf-current" type="number" class="form-control @Invalid("current")" min="0" max="20" step="1"
+                               @bind="_m.CurrentOccupants" />
+                        <div class="invalid-feedback">@Err("current")</div>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" for="pf-needed">@NeededLabel <span class="text-danger">*</span></label>
+                        <input id="pf-needed" type="number" class="form-control @Invalid("needed")" min="1" max="20" step="1"
+                               @bind="_m.NeededOccupants" />
+                        <div class="invalid-feedback">@Err("needed")</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* ---------------------------------------------------------------- Vị trí *@
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-body">
+                <h2 class="h6 fw-semibold mb-3">@(IsHasRoom ? "Vị trí phòng" : "Khu vực muốn tìm")</h2>
+                <div class="row g-3">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="pf-area">Khu vực <span class="text-danger">*</span></label>
+                        <select id="pf-area" class="form-select @Invalid("area")" @bind="_m.AreaId">
+                            <option value="0">-- Chọn khu vực --</option>
+                            @foreach (var a in _areas)
+                            {
+                                <option value="@a.AreaId">@(string.IsNullOrEmpty(a.District) ? $"{a.Name}, {a.City}" : $"{a.Name} ({a.District}, {a.City})")</option>
+                            }
+                        </select>
+                        <div class="invalid-feedback">@Err("area")</div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="pf-address">Địa chỉ</label>
+                        <input id="pf-address" class="form-control @Invalid("address")" maxlength="255" @bind="_m.Address"
+                               placeholder="Số nhà, ngõ, đường…" />
+                        <div class="invalid-feedback">@Err("address")</div>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" for="pf-lat">Vĩ độ</label>
+                        <input id="pf-lat" type="number" class="form-control @Invalid("coords")" min="-90" max="90" step="any"
+                               @bind="_m.Latitude" placeholder="21.0285" />
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" for="pf-lng">Kinh độ</label>
+                        <input id="pf-lng" type="number" class="form-control @Invalid("coords")" min="-180" max="180" step="any"
+                               @bind="_m.Longitude" placeholder="105.8542" />
+                    </div>
+                    <div class="col-12 mt-1">
+                        @if (Err("coords") is { } coordErr)
+                        {
+                            <div class="text-danger small">@coordErr</div>
+                        }
+                        <div class="form-text">Không bắt buộc. Nhập cả vĩ độ và kinh độ (lấy từ Google Maps) để tin hiện chính xác khi tìm theo khoảng cách; để trống thì dùng tâm khu vực.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* ---------------------------------------------------------------- Tiện ích *@
+        @if (_amenities.Count > 0)
+        {
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-body">
+                    <h2 class="h6 fw-semibold mb-3">@(IsHasRoom ? "Tiện ích của phòng" : "Tiện ích mong muốn")</h2>
+                    <div class="row row-cols-2 row-cols-md-3 row-cols-lg-4 g-2">
+                        @foreach (var a in _amenities)
+                        {
+                            var id = a.AmenityId;
+                            <div class="col">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="pf-am-@id" checked="@_m.AmenityIds.Contains(id)"
+                                           @onchange="e => ToggleAmenity(id, e)" />
+                                    <label class="form-check-label" for="pf-am-@id">@a.Name</label>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ---------------------------------------------------------------- Ảnh *@
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-body">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                    <h2 class="h6 fw-semibold mb-0">
+                        Hình ảnh @if (IsHasRoom) { <span class="text-danger">*</span> }
+                        <span class="text-secondary fw-normal small">(@TotalImages/@PostRules.MaxImages)</span>
+                    </h2>
+                    <label for="@CurrentInputId" class="btn btn-outline-primary btn-sm @(TotalImages >= PostRules.MaxImages || _busy ? "disabled" : "")">
+                        <i class="bi bi-images me-1"></i>Chọn ảnh
+                    </label>
+                </div>
+                <div class="form-text mb-2">
+                    JPG, PNG hoặc WEBP, mỗi ảnh tối đa @(PostRules.MaxImageBytes / 1024 / 1024) MB, tối đa @PostRules.MaxImages ảnh.
+                    @(IsHasRoom ? "Tin có phòng cần ít nhất 1 ảnh." : "Tin tìm phòng không bắt buộc ảnh.")
+                </div>
+
+                @* Mỗi lần chọn dùng một InputFile riêng: trình duyệt chỉ giữ file của lần chọn gần nhất trên mỗi thẻ input,
+                   nên giữ lại các thẻ cũ (ẩn) để file đã chọn trước vẫn đọc được khi gửi. *@
+                @foreach (var key in _inputKeys)
+                {
+                    <InputFile @key="key" id="@($"pf-images-{key}")" class="d-none" multiple accept="image/jpeg,image/png,image/webp"
+                               OnChange="OnFilesSelected" disabled="@(_busy || key != _inputKeys[^1])" />
+                }
+
+                @foreach (var w in _imageWarnings)
+                {
+                    <div class="alert alert-warning py-1 px-2 small mb-2">@w</div>
+                }
+                @if (Err("images") is { } imgErr)
+                {
+                    <div class="text-danger small mb-2">@imgErr</div>
+                }
+
+                @if (TotalImages == 0 && _removedImageIds.Count == 0)
+                {
+                    <label for="@CurrentInputId" class="d-block border border-2 border-dashed rounded text-center text-secondary py-4" role="button" style="border-style:dashed!important">
+                        <i class="bi bi-cloud-arrow-up fs-2 d-block"></i>
+                        Bấm để chọn ảnh
+                    </label>
+                }
+                else
+                {
+                    <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-2">
+                        @if (Existing != null)
+                        {
+                            @foreach (var img in Existing.Images.OrderBy(i => i.SortOrder))
+                            {
+                                var imageId = img.ImageId;
+                                var removed = _removedImageIds.Contains(imageId);
+                                <div class="col" @key="@($"old-{imageId}")">
+                                    <div class="position-relative border rounded overflow-hidden">
+                                        <img src="@Api.Url(img.ImageUrl)" alt="Ảnh hiện tại" class="w-100 object-fit-cover" style="aspect-ratio:4/3;@(removed ? "opacity:.3;filter:grayscale(1)" : "")" />
+                                        <span class="position-absolute top-0 start-0 m-1 badge @(removed ? "text-bg-danger" : "text-bg-secondary")">@(removed ? "Sẽ xóa" : "Ảnh cũ")</span>
+                                        <button type="button" class="btn btn-sm @(removed ? "btn-light" : "btn-danger") position-absolute top-0 end-0 m-1 py-0 px-1"
+                                                title="@(removed ? "Giữ lại ảnh" : "Xóa ảnh")" disabled="@_busy" @onclick="() => ToggleExisting(imageId)">
+                                            <i class="bi @(removed ? "bi-arrow-counterclockwise" : "bi-x-lg")"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        }
+                        @foreach (var item in _newImages)
+                        {
+                            var current = item;
+                            <div class="col" @key="current.Id">
+                                <div class="position-relative border rounded overflow-hidden bg-light">
+                                    @if (current.Preview != null)
+                                    {
+                                        <img src="@current.Preview" alt="@current.File.Name" class="w-100 object-fit-cover" style="aspect-ratio:4/3" />
+                                    }
+                                    else
+                                    {
+                                        <div class="d-flex align-items-center justify-content-center text-secondary" style="aspect-ratio:4/3">
+                                            <i class="bi bi-image fs-2"></i>
+                                        </div>
+                                    }
+                                    <span class="position-absolute top-0 start-0 m-1 badge text-bg-primary">Mới</span>
+                                    <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-1 py-0 px-1" title="Bỏ ảnh"
+                                            disabled="@_busy" @onclick="() => RemoveNew(current)">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                    <div class="small text-truncate px-1 bg-white" title="@current.File.Name">@current.File.Name · @SizeText(current.File.Size)</div>
+                                </div>
+                            </div>
+                        }
+                        @if (TotalImages < PostRules.MaxImages)
+                        {
+                            <div class="col">
+                                <label for="@CurrentInputId" class="d-flex flex-column align-items-center justify-content-center border rounded text-secondary h-100 small"
+                                       role="button" style="aspect-ratio:4/3;border-style:dashed!important">
+                                    <i class="bi bi-plus-lg fs-3"></i>Thêm ảnh
+                                </label>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (_errors.Count > 0)
+        {
+            <div class="alert alert-warning py-2">Vui lòng kiểm tra lại các trường được đánh dấu.</div>
+        }
+        @* Lỗi từ máy chủ hiện cả ở cuối form (gần nút lưu) vì người dùng thường đang cuộn ở đây. *@
+        <ErrorAlert Message="@_error" />
+
+        <div class="d-flex flex-wrap gap-2 justify-content-end">
+            @if (!string.IsNullOrEmpty(CancelHref))
+            {
+                <a href="@CancelHref" class="btn btn-outline-secondary @(_busy ? "disabled" : "")">Hủy</a>
+            }
+            <button type="submit" class="btn btn-primary px-4" disabled="@_busy">
+                @if (_busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                @SubmitText
+            </button>
+        </div>
+    </form>
+}
+
+@code {
+    /// <summary>Dữ liệu gửi lên khi bấm lưu.</summary>
+    public record Submission(PostFormData Data, IReadOnlyList<IBrowserFile> Images);
+
+    private const decimal MaxPrice = 1_000_000_000m;
+    private static readonly string[] AllowedTypes = { "image/jpeg", "image/png", "image/webp" };
+    private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png", ".webp" };
+
+    /// <summary>Tin đang sửa; null = đăng tin mới.</summary>
+    [Parameter] public PostDetailDto? Existing { get; set; }
+    [Parameter] public string SubmitText { get; set; } = "Đăng tin";
+    [Parameter] public string? CancelHref { get; set; }
+    /// <summary>Gọi API trong hàm này; ném ApiException khi lỗi để form hiển thị.</summary>
+    [Parameter, EditorRequired] public Func<Submission, Task> OnSubmit { get; set; } = null!;
+
+    private bool IsEdit => Existing != null;
+    private bool IsHasRoom => _m.PostType == PostType.HasRoom;
+    private string PriceLabel => IsHasRoom ? "Giá thuê mỗi người/tháng" : "Ngân sách tối đa mỗi người/tháng";
+    private string CurrentLabel => IsHasRoom ? "Số người đang ở" : "Số người trong nhóm bạn";
+    private string NeededLabel => IsHasRoom ? "Số chỗ còn trống" : "Số người cần tìm chỗ";
+
+    private int KeptCount => Existing?.Images.Count(i => !_removedImageIds.Contains(i.ImageId)) ?? 0;
+    private int TotalImages => KeptCount + _newImages.Count;
+    private string CurrentInputId => $"pf-images-{_inputKeys[^1]}";
+
+    private List<AreaDto>? _areas;
+    private List<AmenityDto>? _amenities;
+    private string? _catalogError;
+    private string? _error;
+    private bool _busy;
+    private readonly Dictionary<string, string> _errors = new();
+    private readonly List<string> _imageWarnings = new();
+
+    private FormModel _m = new();
+    private long? _initializedFor;
+    private readonly HashSet<long> _removedImageIds = new();
+    private readonly List<NewImage> _newImages = new();
+    private readonly List<int> _inputKeys = new() { 0 };
+    private int _nextId;
+
+    protected override async Task OnInitializedAsync() => await LoadCatalogAsync();
+
+    protected override void OnParametersSet()
+    {
+        // Chỉ nạp dữ liệu ban đầu một lần cho mỗi tin (không ghi đè khi người dùng đang nhập).
+        var key = Existing?.PostId ?? 0;
+        if (_initializedFor == key) return;
+        _initializedFor = key;
+        _removedImageIds.Clear();
+        _newImages.Clear();
+        _m = Existing is { } p
+            ? new FormModel
+            {
+                PostType = p.PostType,
+                Title = p.Title,
+                Description = p.Description,
+                Price = p.Price,
+                AreaId = p.AreaId,
+                Address = p.Address,
+                Latitude = p.Latitude,
+                Longitude = p.Longitude,
+                CurrentOccupants = p.CurrentOccupants,
+                NeededOccupants = p.NeededOccupants,
+                PreferredGender = p.PreferredGender ?? Gender.Any,
+                AmenityIds = p.Amenities.Select(a => a.AmenityId).ToList(),
+            }
+            : new FormModel();
+    }
+
+    private async Task LoadCatalogAsync()
+    {
+        _catalogError = null;
+        try
+        {
+            var areas = CatalogApi.AreasAsync();
+            var amenities = CatalogApi.AmenitiesAsync();
+            _areas = (await areas).Where(a => a.IsActive).ToList();
+            _amenities = (await amenities).Where(a => a.IsActive).ToList();
+        }
+        catch (ApiException ex)
+        {
+            _catalogError = ex.Message;
+        }
+    }
+
+    private string? Err(string key) => _errors.TryGetValue(key, out var v) ? v : null;
+    private string Invalid(string key) => _errors.ContainsKey(key) ? "is-invalid" : "";
+
+    private void ToggleAmenity(int id, ChangeEventArgs e)
+    {
+        if (e.Value is true) { if (!_m.AmenityIds.Contains(id)) _m.AmenityIds.Add(id); }
+        else _m.AmenityIds.Remove(id);
+    }
+
+    private void ToggleExisting(long imageId)
+    {
+        if (!_removedImageIds.Remove(imageId))
+        {
+            _removedImageIds.Add(imageId);
+        }
+        else if (TotalImages > PostRules.MaxImages)
+        {
+            _removedImageIds.Add(imageId); // giữ lại sẽ vượt giới hạn
+            _imageWarnings.Clear();
+            _imageWarnings.Add($"Mỗi tin tối đa {PostRules.MaxImages} ảnh. Hãy bỏ bớt ảnh mới trước khi giữ lại ảnh này.");
+        }
+        _errors.Remove("images");
+    }
+
+    private async Task OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        _imageWarnings.Clear();
+        _errors.Remove("images");
+        var added = new List<NewImage>();
+        foreach (var file in e.GetMultipleFiles(100))
+        {
+            var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+            if (!AllowedTypes.Contains(file.ContentType) && !AllowedExtensions.Contains(ext))
+            {
+                _imageWarnings.Add($"\"{file.Name}\" không phải ảnh JPG, PNG hoặc WEBP — đã bỏ qua.");
+                continue;
+            }
+            if (file.Size <= 0 || file.Size > PostRules.MaxImageBytes)
+            {
+                _imageWarnings.Add($"\"{file.Name}\" vượt quá {PostRules.MaxImageBytes / 1024 / 1024} MB — đã bỏ qua.");
+                continue;
+            }
+            if (TotalImages >= PostRules.MaxImages)
+            {
+                _imageWarnings.Add($"Mỗi tin tối đa {PostRules.MaxImages} ảnh — \"{file.Name}\" và các ảnh sau đã bị bỏ qua.");
+                break;
+            }
+            var item = new NewImage(++_nextId, file);
+            _newImages.Add(item);
+            added.Add(item);
+        }
+
+        // Thẻ input này giờ giữ các file vừa chọn → tạo thẻ mới cho lần chọn tiếp theo.
+        if (added.Count > 0) _inputKeys.Add(_inputKeys[^1] + 1);
+        StateHasChanged();
+
+        // Ảnh xem trước thu nhỏ (không bắt buộc; lỗi thì hiện biểu tượng).
+        foreach (var item in added)
+        {
+            try
+            {
+                var thumb = await item.File.RequestImageFileAsync("image/jpeg", 320, 320);
+                await using var stream = thumb.OpenReadStream(PostRules.MaxImageBytes);
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                item.Preview = "data:image/jpeg;base64," + Convert.ToBase64String(ms.ToArray());
+                StateHasChanged();
+            }
+            catch (Exception)
+            {
+                // trình duyệt không dựng được ảnh thu nhỏ — bỏ qua
+            }
+        }
+    }
+
+    private void RemoveNew(NewImage item)
+    {
+        _newImages.Remove(item);
+        _imageWarnings.Clear();
+    }
+
+    private static string SizeText(long bytes) =>
+        bytes >= 1024 * 1024 ? $"{bytes / 1024d / 1024d:0.0} MB" : $"{Math.Max(1, bytes / 1024)} KB";
+
+    private bool Validate()
+    {
+        _errors.Clear();
+        if (!PostType.All.Contains(_m.PostType)) _errors["postType"] = "Vui lòng chọn loại tin.";
+        var title = _m.Title.Trim();
+        if (title.Length is < 10 or > 150) _errors["title"] = "Tiêu đề phải từ 10 đến 150 ký tự.";
+        if (_m.Description?.Length > 2000) _errors["description"] = "Mô tả tối đa 2000 ký tự.";
+        if (_m.Price is not { } price || price <= 0 || price > MaxPrice) _errors["price"] = "Giá phải lớn hơn 0 và không quá 1 tỷ đồng.";
+        else if (price != Math.Round(price)) _errors["price"] = "Giá phải là số nguyên (đồng).";
+        if (_m.CurrentOccupants is < 0 or > 20) _errors["current"] = "Phải từ 0 đến 20.";
+        if (_m.NeededOccupants is < 1 or > 20) _errors["needed"] = "Phải từ 1 đến 20.";
+        if (_m.AreaId <= 0) _errors["area"] = "Vui lòng chọn khu vực.";
+        if (_m.Address?.Trim().Length > 255) _errors["address"] = "Địa chỉ tối đa 255 ký tự.";
+        if (_m.Latitude.HasValue != _m.Longitude.HasValue) _errors["coords"] = "Cần nhập đủ cả vĩ độ và kinh độ (hoặc để trống cả hai).";
+        else if (_m.Latitude is < -90 or > 90 || _m.Longitude is < -180 or > 180) _errors["coords"] = "Vĩ độ phải từ -90 đến 90, kinh độ từ -180 đến 180.";
+        if (TotalImages > PostRules.MaxImages) _errors["images"] = $"Mỗi tin tối đa {PostRules.MaxImages} ảnh.";
+        else if (IsHasRoom && TotalImages == 0) _errors["images"] = "Tin có phòng cần ít nhất 1 ảnh.";
+        return _errors.Count == 0;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_busy) return;
+        _error = null;
+        if (!Validate()) return;
+
+        var activeAmenities = _amenities?.Select(a => a.AmenityId).ToHashSet();
+        var data = new PostFormData
+        {
+            PostType = _m.PostType,
+            Title = _m.Title.Trim(),
+            Description = string.IsNullOrWhiteSpace(_m.Description) ? null : _m.Description.Trim(),
+            Price = _m.Price!.Value,
+            AreaId = _m.AreaId,
+            Address = string.IsNullOrWhiteSpace(_m.Address) ? null : _m.Address.Trim(),
+            Latitude = _m.Latitude,
+            Longitude = _m.Longitude,
+            CurrentOccupants = _m.CurrentOccupants,
+            NeededOccupants = _m.NeededOccupants,
+            PreferredGender = string.IsNullOrEmpty(_m.PreferredGender) ? Gender.Any : _m.PreferredGender,
+            // Bỏ tiện ích đã bị ẩn khỏi danh mục (backend sẽ từ chối cả form).
+            AmenityIds = _m.AmenityIds.Distinct().Where(id => activeAmenities == null || activeAmenities.Contains(id)).ToList(),
+            KeepImageIds = Existing?.Images.Where(i => !_removedImageIds.Contains(i.ImageId)).Select(i => i.ImageId).ToList() ?? new(),
+        };
+
+        _busy = true;
+        try
+        {
+            await OnSubmit(new Submission(data, _newImages.Select(i => i.File).ToList()));
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex) when (ex is IOException or JSException)
+        {
+            // Đọc file thất bại (file bị xóa/đổi trên máy, hoặc vượt dung lượng).
+            _error = "Không đọc được một số ảnh đã chọn. Vui lòng bỏ và chọn lại ảnh.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private class NewImage(int id, IBrowserFile file)
+    {
+        public int Id { get; } = id;
+        public IBrowserFile File { get; } = file;
+        public string? Preview { get; set; }
+    }
+
+    private class FormModel
+    {
+        public string PostType { get; set; } = Domain.Constants.PostType.HasRoom;
+        public string Title { get; set; } = "";
+        public string? Description { get; set; }
+        public decimal? Price { get; set; }
+        public int AreaId { get; set; }
+        public string? Address { get; set; }
+        public decimal? Latitude { get; set; }
+        public decimal? Longitude { get; set; }
+        public int CurrentOccupants { get; set; }
+        public int NeededOccupants { get; set; } = 1;
+        public string? PreferredGender { get; set; } = Domain.Constants.Gender.Any;
+        public List<int> AmenityIds { get; set; } = new();
+    }
+}

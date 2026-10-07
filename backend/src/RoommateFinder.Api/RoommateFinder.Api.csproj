@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Microsoft.Data.SqlClient cần culture "en-US" khi mở kết nối, không chạy được ở invariant mode -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <UserSecretsId>27738649-fdd1-4f91-beae-502c373a426e</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.31" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.31">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RoommateFinder.Application\RoommateFinder.Application.csproj" />
+    <ProjectReference Include="..\RoommateFinder.Infrastructure\RoommateFinder.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

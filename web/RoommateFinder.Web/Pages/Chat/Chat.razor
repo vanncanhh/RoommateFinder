@@ -1,0 +1,606 @@
+@page "/chat"
+@page "/chat/{ConversationId:long}"
+@attribute [Authorize]
+@implements IDisposable
+@inject ChatApi ChatApi
+@inject RealtimeService Realtime
+@inject AuthSession Session
+@inject NavigationManager Nav
+@inject ToastService Toast
+@inject IJSRuntime JS
+
+<PageTitle>Tin nhắn – RoommateFinder</PageTitle>
+
+<div class="container py-3">
+    <div class="d-flex align-items-center gap-2 mb-3">
+        <h1 class="h4 mb-0">Tin nhắn</h1>
+        @if (!Realtime.IsChatConnected)
+        {
+            <span class="badge text-bg-warning" title="Tin nhắn mới sẽ được tải lại mỗi 10 giây cho tới khi kết nối lại">
+                <span class="spinner-grow spinner-grow-sm me-1" style="width:.5rem;height:.5rem"></span>Đang kết nối lại…
+            </span>
+        }
+    </div>
+
+    @if (_listError != null && _convs == null)
+    {
+        <ErrorAlert Message="@_listError" OnRetry="LoadListAsync" />
+    }
+    else if (_convs == null)
+    {
+        <Loading />
+    }
+    else if (_convs.Count == 0 && ConversationId == null)
+    {
+        <div class="card shadow-sm border-0">
+            <EmptyState Icon="bi-chat-dots" Text="Chưa có cuộc trò chuyện nào. Kết nối được chấp nhận sẽ xuất hiện ở đây.">
+                <a href="/connections" class="btn btn-primary btn-sm mt-3">Xem yêu cầu kết nối</a>
+            </EmptyState>
+        </div>
+    }
+    else
+    {
+        <div class="card shadow-sm border-0 chat-wrap overflow-hidden">
+            <div class="row g-0 h-100">
+                @* Danh sách cuộc trò chuyện (điện thoại: ẩn khi đang mở một cuộc) *@
+                <div class="col-12 col-md-4 border-end chat-list h-100 @(ConversationId != null ? "d-none d-md-block" : "")">
+                    @if (_convs.Count == 0)
+                    {
+                        <EmptyState Icon="bi-chat-dots" Text="Kết nối được chấp nhận sẽ xuất hiện ở đây" />
+                    }
+                    <div class="list-group list-group-flush">
+                        @foreach (var c in _convs)
+                        {
+                            var active = c.Info.ConversationId == ConversationId;
+                            <a href="/chat/@c.Info.ConversationId" @key="c.Info.ConversationId"
+                               class="list-group-item list-group-item-action d-flex gap-2 py-2 @(active ? "active" : "")">
+                                <UserAvatar Name="@c.Info.OtherUserName" Url="@c.Info.OtherUserAvatarUrl" Size="44" />
+                                <div class="flex-grow-1" style="min-width:0">
+                                    <div class="d-flex justify-content-between align-items-baseline gap-2">
+                                        <span class="text-truncate @(c.Unread > 0 ? "fw-bold" : "fw-semibold")">@c.Info.OtherUserName</span>
+                                        <small class="text-nowrap @(active ? "" : "text-secondary")">@Fmt.ChatTime(c.SortKey)</small>
+                                    </div>
+                                    <div class="small text-truncate @(active ? "" : "text-secondary")"><i class="bi bi-house-door me-1"></i>@c.Info.PostTitle</div>
+                                    <div class="d-flex justify-content-between align-items-center gap-2">
+                                        <span class="small text-truncate @(c.Unread > 0 && !active ? "fw-semibold text-body" : active ? "" : "text-secondary")">
+                                            @if (c.LastMessage == null)
+                                            {
+                                                <em>Chưa có tin nhắn</em>
+                                            }
+                                            else
+                                            {
+                                                @((c.LastSenderId == Me ? "Bạn: " : "") + c.LastMessage)
+                                            }
+                                        </span>
+                                        @if (c.Unread > 0)
+                                        {
+                                            <span class="badge rounded-pill bg-danger">@(c.Unread > 99 ? "99+" : c.Unread)</span>
+                                        }
+                                    </div>
+                                </div>
+                            </a>
+                        }
+                    </div>
+                </div>
+
+                @* Khung tin nhắn *@
+                <div class="col-12 col-md-8 h-100 flex-column @(ConversationId == null ? "d-none d-md-flex" : "d-flex")">
+                    @if (ConversationId == null)
+                    {
+                        <div class="flex-grow-1 d-flex align-items-center justify-content-center">
+                            <EmptyState Icon="bi-chat-left-text" Text="Chọn một cuộc trò chuyện để bắt đầu nhắn tin" />
+                        </div>
+                    }
+                    else
+                    {
+                        var open = Find(ConversationId.Value);
+                        <div class="d-flex align-items-center gap-2 border-bottom p-2">
+                            <a href="/chat" class="btn btn-link text-body d-md-none px-1" aria-label="Quay lại danh sách"><i class="bi bi-arrow-left fs-5"></i></a>
+                            @if (open != null)
+                            {
+                                <a href="/users/@open.Info.OtherUserId"><UserAvatar Name="@open.Info.OtherUserName" Url="@open.Info.OtherUserAvatarUrl" Size="38" /></a>
+                                <div style="min-width:0">
+                                    <a href="/users/@open.Info.OtherUserId" class="fw-semibold text-decoration-none text-body d-block text-truncate">@open.Info.OtherUserName</a>
+                                    <a href="/posts/@open.Info.PostId" class="small text-decoration-none d-block text-truncate"><i class="bi bi-house-door me-1"></i>@open.Info.PostTitle</a>
+                                </div>
+                            }
+                            else
+                            {
+                                <span class="fw-semibold">Cuộc trò chuyện</span>
+                            }
+                        </div>
+
+                        <div class="chat-messages flex-grow-1 p-3" @ref="_scroller">
+                            @if (_paneError != null)
+                            {
+                                <ErrorAlert Message="@_paneError" OnRetry="() => OpenAsync(ConversationId)" />
+                            }
+                            else if (_messages == null)
+                            {
+                                <Loading />
+                            }
+                            else
+                            {
+                                @if (_hasMore)
+                                {
+                                    <div class="text-center mb-3">
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="LoadOlderAsync" disabled="@_loadingOlder">
+                                            @if (_loadingOlder) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                            Tải tin cũ hơn
+                                        </button>
+                                    </div>
+                                }
+                                @if (_messages.Count == 0)
+                                {
+                                    <div class="text-center text-secondary small py-5">Hãy gửi lời chào để bắt đầu trò chuyện.</div>
+                                }
+                                var lastMineId = _messages.LastOrDefault(m => m.SenderId == Me)?.MessageId;
+                                @foreach (var m in _messages)
+                                {
+                                    var mine = m.SenderId == Me;
+                                    <div class="d-flex flex-column mb-2 @(mine ? "align-items-end" : "align-items-start")" @key="m.MessageId">
+                                        <div class="bubble rounded-3 px-3 py-2 @(mine ? "mine" : "bg-white border")">
+                                            <div class="bubble-text">@m.Content</div>
+                                            <div class="text-muted text-end" style="font-size:.7rem">@Fmt.ChatTime(m.SentAt)</div>
+                                        </div>
+                                        @if (mine && m.MessageId == lastMineId && m.IsRead)
+                                        {
+                                            <small class="text-secondary mt-1" style="font-size:.72rem"><i class="bi bi-check2-all me-1"></i>Đã xem</small>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </div>
+
+                        <div class="border-top p-2">
+                            <div class="d-flex gap-2 align-items-end">
+                                <textarea @ref="_input" data-enter-send class="form-control" rows="2" maxlength="1000" style="resize:none"
+                                          placeholder="Nhập tin nhắn… (Enter để gửi, Shift+Enter để xuống dòng)"
+                                          value="@_draft" @oninput="OnDraftInput" @onkeydown="OnKeyDown"
+                                          disabled="@(_messages == null || _paneError != null)"></textarea>
+                                <button class="btn btn-primary" @onclick="SendAsync" aria-label="Gửi"
+                                        disabled="@(_sending || string.IsNullOrWhiteSpace(_draft) || _messages == null)">
+                                    @if (_sending)
+                                    {
+                                        <span class="spinner-border spinner-border-sm"></span>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-send-fill"></i>
+                                    }
+                                </button>
+                            </div>
+                            @if (_draft.Length > 900)
+                            {
+                                <div class="form-text text-end @(_draft.Length > MaxLength ? "text-danger" : "")">@_draft.Length/@MaxLength</div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public long? ConversationId { get; set; }
+
+    private const int PageSize = 30;
+    private const int MaxLength = 1000;
+
+    /// <summary>Bản sao có thể sửa của ConversationDto (DTO chỉ init) — cập nhật xem trước / số chưa đọc theo realtime.</summary>
+    private sealed class Conv(ConversationDto info)
+    {
+        public ConversationDto Info { get; } = info;
+        public string? LastMessage { get; set; } = info.LastMessage;
+        public long? LastSenderId { get; set; } = info.LastMessageSenderId;
+        public DateTime? LastAt { get; set; } = info.LastMessageAt;
+        public int Unread { get; set; } = info.UnreadCount;
+        public DateTime SortKey => LastAt ?? Info.CreatedAt;
+    }
+
+    private List<Conv>? _convs;
+    private string? _listError;
+    private bool _listLoading;
+
+    private long? _openId;
+    private int _openVersion;
+    private List<MessageDto>? _messages;
+    private readonly HashSet<long> _ids = new();          // chống trùng tin trong cuộc đang mở
+    private readonly HashSet<long> _countedUnread = new(); // tin đã cộng vào số chưa đọc (chống cộng hai lần)
+    private bool _hasMore;
+    private bool _loadingOlder;
+    private string? _paneError;
+
+    private string _draft = "";
+    private bool _sending;
+
+    private ElementReference _scroller;
+    private ElementReference _input;
+    private bool _scrollBottom;
+    private double? _keepScrollHeight;
+    private bool _focusInput;
+
+    private Timer? _poll;
+    private bool _disposed;
+
+    private long Me => Session.UserId;
+
+    protected override void OnInitialized()
+    {
+        Realtime.MessageReceived += OnMessage;
+        Realtime.MessagesRead += OnMessagesRead;
+        Realtime.ChatConnectionChanged += OnChatConnectionChanged;
+        // Phương án dự phòng (docs/API.md): mất kết nối SignalR thì 10 giây tải lại cuộc đang mở một lần.
+        _poll = new Timer(_ =>
+        {
+            if (!_disposed && !Realtime.IsChatConnected && _openId != null)
+                _ = InvokeAsync(async () => { await CatchUpAsync(); Render(); });
+        }, null, 10_000, 10_000);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_convs == null && !_listLoading) await LoadListAsync();
+        if (ConversationId != _openId) await OpenAsync(ConversationId);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_disposed) return;
+        try
+        {
+            if (_keepScrollHeight is { } h)
+            {
+                _keepScrollHeight = null;
+                _scrollBottom = false;
+                await JS.InvokeVoidAsync("rf.keepScroll", _scroller, h);
+            }
+            else if (_scrollBottom && _messages != null)
+            {
+                _scrollBottom = false;
+                await JS.InvokeVoidAsync("rf.scrollToBottom", _scroller);
+            }
+            if (_focusInput && _messages != null)
+            {
+                _focusInput = false;
+                await JS.InvokeVoidAsync("rf.focus", _input);
+            }
+        }
+        catch (JSException) { /* phần tử chưa có trên trang */ }
+        catch (InvalidOperationException) { }
+    }
+
+    // ===== Danh sách cuộc trò chuyện =====
+
+    private async Task LoadListAsync()
+    {
+        _listLoading = true;
+        try
+        {
+            var list = await ChatApi.ConversationsAsync();
+            _convs = list.Select(c => new Conv(c)).ToList();
+            if (_openId is { } id && Find(id) is { } open) open.Unread = 0; // đang xem thì coi như đã đọc
+            Sort();
+            _listError = null;
+        }
+        catch (ApiException ex)
+        {
+            _listError = ex.Message;
+            if (_convs != null) Toast.Error(ex);
+        }
+        finally
+        {
+            _listLoading = false;
+        }
+    }
+
+    private Conv? Find(long conversationId) => _convs?.FirstOrDefault(c => c.Info.ConversationId == conversationId);
+
+    private void Sort() => _convs?.Sort((a, b) => b.SortKey.CompareTo(a.SortKey));
+
+    private void ApplyLast(Conv conv, MessageDto m)
+    {
+        if (conv.LastAt is { } at && m.SentAt < at) return; // tin cũ hơn tin xem trước hiện tại
+        conv.LastMessage = m.Content;
+        conv.LastSenderId = m.SenderId;
+        conv.LastAt = m.SentAt;
+        Sort();
+    }
+
+    // ===== Cuộc trò chuyện đang mở =====
+
+    private async Task OpenAsync(long? id)
+    {
+        _openId = id;
+        var version = ++_openVersion;
+        _messages = null;
+        _ids.Clear();
+        _hasMore = false;
+        _paneError = null;
+        _draft = "";
+        if (id is not { } cid) return;
+
+        if (Find(cid) is { } conv) conv.Unread = 0;
+        try
+        {
+            var list = await ChatApi.MessagesAsync(cid, null, PageSize);
+            if (version != _openVersion) return;
+            SetMessages(list);
+            _hasMore = list.Count >= PageSize;
+            _scrollBottom = true;
+            _focusInput = true;
+        }
+        catch (ApiException ex)
+        {
+            if (version == _openVersion) _paneError = ex.Message;
+            return;
+        }
+
+        if (Find(cid) == null && _convs != null)
+        {
+            await LoadListAsync(); // cuộc trò chuyện mới tạo sau khi tải danh sách
+            if (version != _openVersion) return;
+        }
+        await MarkReadAsync(cid);
+    }
+
+    private void SetMessages(List<MessageDto> list)
+    {
+        _ids.Clear();
+        _messages = list.Where(m => _ids.Add(m.MessageId)).OrderBy(m => m.MessageId).ToList();
+    }
+
+    private async Task LoadOlderAsync()
+    {
+        if (_openId is not { } id || _messages is not { Count: > 0 } || _loadingOlder) return;
+        _loadingOlder = true;
+        var version = _openVersion;
+        try
+        {
+            double oldHeight = 0;
+            try { oldHeight = await JS.InvokeAsync<double>("rf.scrollHeight", _scroller); } catch (JSException) { }
+            var older = await ChatApi.MessagesAsync(id, _messages[0].MessageId, PageSize);
+            if (version != _openVersion || _messages == null) return;
+            var fresh = older.Where(m => _ids.Add(m.MessageId)).OrderBy(m => m.MessageId).ToList();
+            _messages.InsertRange(0, fresh);
+            _hasMore = older.Count >= PageSize;
+            _keepScrollHeight = oldHeight; // giữ nguyên vị trí đang đọc sau khi chèn tin cũ lên đầu
+        }
+        catch (ApiException ex)
+        {
+            Toast.Error(ex);
+        }
+        finally
+        {
+            _loadingOlder = false;
+        }
+    }
+
+    /// <summary>Tải trang tin mới nhất và gộp vào danh sách hiện có (sau khi tái kết nối / khi thăm dò dự phòng).</summary>
+    private async Task CatchUpAsync()
+    {
+        if (_openId is not { } id || _messages == null) return;
+        var version = _openVersion;
+        try
+        {
+            var latest = await ChatApi.MessagesAsync(id, null, PageSize);
+            if (version != _openVersion || _messages == null || latest.Count == 0) return;
+
+            var added = false;
+            var gap = latest.Count >= PageSize && _messages.Count > 0
+                      && !_ids.Contains(latest[0].MessageId) && latest[0].MessageId > _messages[^1].MessageId;
+            if (gap)
+            {
+                // Lỡ nhiều hơn một trang: thay bằng trang mới nhất, phần cũ hơn tải lại bằng "Tải tin cũ hơn".
+                SetMessages(latest);
+                _hasMore = true;
+                added = true;
+            }
+            else
+            {
+                var byId = latest.ToDictionary(m => m.MessageId);
+                for (var i = 0; i < _messages.Count; i++)
+                {
+                    if (byId.TryGetValue(_messages[i].MessageId, out var fresh) && fresh.IsRead != _messages[i].IsRead)
+                        _messages[i] = fresh;
+                }
+                var newOnes = latest.Where(m => _ids.Add(m.MessageId)).ToList();
+                if (newOnes.Count > 0)
+                {
+                    _messages.AddRange(newOnes);
+                    _messages.Sort((a, b) => a.MessageId.CompareTo(b.MessageId));
+                    added = true;
+                }
+            }
+
+            if (added)
+            {
+                _scrollBottom = true;
+                if (Find(id) is { } conv) ApplyLast(conv, _messages[^1]);
+                if (latest.Any(m => m.SenderId != Me && !m.IsRead)) await MarkReadAsync(id);
+            }
+        }
+        catch (ApiException) { /* thử lại ở lần thăm dò sau */ }
+    }
+
+    private async Task MarkReadAsync(long conversationId)
+    {
+        if (Find(conversationId) is { } conv) conv.Unread = 0;
+        try
+        {
+            if (Realtime.IsChatConnected)
+            {
+                try
+                {
+                    await Realtime.MarkReadAsync(conversationId);
+                    return;
+                }
+                catch (Exception ex) when (ex is not ApiException)
+                {
+                    // hub vừa mất kết nối → dùng REST
+                }
+            }
+            await ChatApi.MarkReadAsync(conversationId);
+        }
+        catch (ApiException) { /* không quan trọng: lần mở sau sẽ đánh dấu lại */ }
+    }
+
+    // ===== Gửi tin =====
+
+    private void OnDraftInput(ChangeEventArgs e) => _draft = e.Value?.ToString() ?? "";
+
+    /// <summary>
+    /// Enter gửi, Shift+Enter xuống dòng. Việc chặn ký tự xuống dòng mặc định do wwwroot/js/app.js làm
+    /// (thuộc tính data-enter-send) vì Blazor không chặn mặc định theo từng phím được.
+    /// </summary>
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || e.ShiftKey) return;
+        _focusInput = true;
+        await SendAsync();
+    }
+
+    private async Task SendAsync()
+    {
+        if (_openId is not { } id || _sending || _messages == null) return;
+        var text = _draft.Trim();
+        if (text.Length == 0) return;
+        if (text.Length > MaxLength)
+        {
+            Toast.Warning($"Tin nhắn tối đa {MaxLength} ký tự.");
+            return;
+        }
+
+        _sending = true;
+        _draft = "";
+        try
+        {
+            MessageDto sent;
+            if (Realtime.IsChatConnected)
+            {
+                try
+                {
+                    sent = await Realtime.SendMessageAsync(id, text);
+                }
+                catch (InvalidOperationException)
+                {
+                    sent = await ChatApi.SendAsync(id, text); // hub chưa sẵn sàng → gửi qua REST
+                }
+            }
+            else
+            {
+                sent = await ChatApi.SendAsync(id, text);
+            }
+
+            // Người gửi cũng nhận sự kiện "message" của chính mình → chống trùng theo MessageId.
+            if (sent.ConversationId == _openId && _messages != null && _ids.Add(sent.MessageId))
+            {
+                _messages.Add(sent);
+                if (_messages.Count > 1 && _messages[^2].MessageId > sent.MessageId)
+                    _messages.Sort((a, b) => a.MessageId.CompareTo(b.MessageId));
+            }
+            if (Find(sent.ConversationId) is { } conv) ApplyLast(conv, sent);
+            _scrollBottom = true;
+        }
+        catch (ApiException ex)
+        {
+            Toast.Error(ex);
+            if (_draft.Length == 0 && id == _openId) _draft = text;
+        }
+        catch (Exception)
+        {
+            Toast.Error("Không gửi được tin nhắn. Vui lòng thử lại.");
+            if (_draft.Length == 0 && id == _openId) _draft = text;
+        }
+        finally
+        {
+            _sending = false;
+            _focusInput = true;
+        }
+    }
+
+    // ===== Sự kiện realtime =====
+
+    private void OnMessage(MessageDto m) => InvokeAsync(async () =>
+    {
+        if (_disposed) return;
+        var isOpen = m.ConversationId == _openId && _messages != null;
+        if (isOpen && _ids.Add(m.MessageId))
+        {
+            _messages!.Add(m);
+            if (_messages.Count > 1 && _messages[^2].MessageId > m.MessageId)
+                _messages.Sort((a, b) => a.MessageId.CompareTo(b.MessageId));
+            _scrollBottom = true;
+        }
+
+        var conv = Find(m.ConversationId);
+        if (conv == null)
+        {
+            if (_convs != null && !_listLoading) await LoadListAsync(); // cuộc trò chuyện chưa có trong danh sách
+        }
+        else
+        {
+            ApplyLast(conv, m);
+            if (!isOpen && m.SenderId != Me && _countedUnread.Add(m.MessageId)) conv.Unread++;
+        }
+
+        if (isOpen && m.SenderId != Me) await MarkReadAsync(m.ConversationId);
+        Render();
+    });
+
+    private void OnMessagesRead(long conversationId, long readerId) => InvokeAsync(() =>
+    {
+        if (_disposed) return;
+        if (readerId == Me)
+        {
+            // Đã đọc ở tab/thiết bị khác.
+            if (Find(conversationId) is { } conv) conv.Unread = 0;
+        }
+        else if (conversationId == _openId && _messages != null)
+        {
+            for (var i = 0; i < _messages.Count; i++)
+            {
+                var m = _messages[i];
+                if (m.SenderId == Me && !m.IsRead) _messages[i] = AsRead(m);
+            }
+        }
+        Render();
+    });
+
+    private void OnChatConnectionChanged(bool connected) => InvokeAsync(async () =>
+    {
+        if (_disposed) return;
+        Render(); // cập nhật nhãn "Đang kết nối lại…"
+        if (!connected) return;
+        // Tái kết nối: tin phát ra lúc mất kết nối không được đẩy lại → tải bù.
+        if (_convs != null && !_listLoading) await LoadListAsync();
+        await CatchUpAsync();
+        Render();
+    });
+
+    private static MessageDto AsRead(MessageDto m) => new()
+    {
+        MessageId = m.MessageId,
+        ConversationId = m.ConversationId,
+        SenderId = m.SenderId,
+        Content = m.Content,
+        SentAt = m.SentAt,
+        IsRead = true,
+    };
+
+    private void Render()
+    {
+        if (!_disposed) StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Realtime.MessageReceived -= OnMessage;
+        Realtime.MessagesRead -= OnMessagesRead;
+        Realtime.ChatConnectionChanged -= OnChatConnectionChanged;
+        _poll?.Dispose();
+        _poll = null;
+    }
+}

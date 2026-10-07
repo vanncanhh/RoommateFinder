@@ -1,0 +1,11 @@
+@page "/admin"
+@layout AdminLayout
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject NavigationManager Nav
+
+<PageTitle>Quản trị – RoommateFinder</PageTitle>
+<Loading />
+
+@code {
+    protected override void OnInitialized() => Nav.NavigateTo("/admin/dashboard", replace: true);
+}

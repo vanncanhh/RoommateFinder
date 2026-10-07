@@ -1,0 +1,122 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject AuthSession Session
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<nav class="navbar navbar-expand-lg bg-white border-bottom sticky-top">
+    <div class="container">
+        <a class="navbar-brand fw-semibold text-primary d-flex align-items-center gap-2" href="/">
+            <i class="bi bi-house-heart-fill"></i> RoommateFinder
+        </a>
+
+        <div class="d-flex align-items-center gap-2 order-lg-last">
+            @if (Session.IsAuthenticated)
+            {
+                <NotificationBell />
+                <div class="dropdown">
+                    <button class="btn btn-link text-decoration-none text-body d-flex align-items-center gap-2 p-1" @onclick="ToggleUserMenu">
+                        <UserAvatar Name="@Session.User!.FullName" Url="@Session.User.AvatarUrl" Size="32" />
+                        <span class="d-none d-md-inline">@Session.User.FullName</span>
+                        <i class="bi bi-chevron-down small"></i>
+                    </button>
+                    @if (_userMenuOpen)
+                    {
+                        <div class="dropdown-menu dropdown-menu-end show shadow" style="right:0;left:auto">
+                            <a class="dropdown-item" href="/profile" @onclick="CloseMenus"><i class="bi bi-person me-2"></i>Hồ sơ của tôi</a>
+                            <a class="dropdown-item" href="/saved" @onclick="CloseMenus"><i class="bi bi-bookmark me-2"></i>Tin đã lưu</a>
+                            @if (Session.IsModerator)
+                            {
+                                <div class="dropdown-divider"></div>
+                                <a class="dropdown-item" href="/moderator/posts" @onclick="CloseMenus"><i class="bi bi-shield-check me-2"></i>Kiểm duyệt</a>
+                            }
+                            @if (Session.IsAdmin)
+                            {
+                                <a class="dropdown-item" href="/admin/dashboard" @onclick="CloseMenus"><i class="bi bi-speedometer2 me-2"></i>Quản trị</a>
+                            }
+                            <div class="dropdown-divider"></div>
+                            <button class="dropdown-item text-danger" @onclick="LogoutAsync"><i class="bi bi-box-arrow-right me-2"></i>Đăng xuất</button>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <a class="btn btn-outline-primary btn-sm" href="/login">Đăng nhập</a>
+                <a class="btn btn-primary btn-sm d-none d-sm-inline-block" href="/register">Đăng ký</a>
+            }
+            <button class="navbar-toggler" type="button" aria-label="Mở menu" @onclick="() => _navOpen = !_navOpen">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+        </div>
+
+        <div class="collapse navbar-collapse @(_navOpen ? "show" : "")">
+            <ul class="navbar-nav me-auto">
+                <li class="nav-item"><NavLink class="nav-link" href="/search" @onclick="CloseMenus"><i class="bi bi-search me-1"></i>Tìm phòng</NavLink></li>
+                @if (Session.IsAuthenticated)
+                {
+                    <li class="nav-item"><NavLink class="nav-link" href="/posts/new" @onclick="CloseMenus"><i class="bi bi-plus-circle me-1"></i>Đăng tin</NavLink></li>
+                    <li class="nav-item"><NavLink class="nav-link" href="/my-posts" @onclick="CloseMenus"><i class="bi bi-file-text me-1"></i>Tin của tôi</NavLink></li>
+                    <li class="nav-item"><NavLink class="nav-link" href="/connections" @onclick="CloseMenus"><i class="bi bi-people me-1"></i>Kết nối</NavLink></li>
+                    <li class="nav-item"><NavLink class="nav-link" href="/chat" @onclick="CloseMenus"><i class="bi bi-chat-dots me-1"></i>Tin nhắn</NavLink></li>
+                }
+            </ul>
+        </div>
+    </div>
+</nav>
+
+@if (_userMenuOpen)
+{
+    <div class="position-fixed top-0 start-0 w-100 h-100" style="z-index:1000" @onclick="CloseMenus"></div>
+}
+
+<main class="rf-main">
+    @Body
+</main>
+
+<footer class="text-center text-secondary small py-4">
+    © 2026 RoommateFinder – Tìm người ở ghép an toàn, phù hợp lối sống.
+</footer>
+
+<Toasts />
+
+@code {
+    private bool _navOpen;
+    private bool _userMenuOpen;
+
+    protected override void OnInitialized()
+    {
+        Session.Changed += OnSessionChanged;
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    private void ToggleUserMenu() => _userMenuOpen = !_userMenuOpen;
+
+    private void CloseMenus()
+    {
+        _navOpen = false;
+        _userMenuOpen = false;
+    }
+
+    private async Task LogoutAsync()
+    {
+        CloseMenus();
+        await Session.LogoutAsync();
+        Toast.Info("Bạn đã đăng xuất.");
+        Nav.NavigateTo("/");
+    }
+
+    private void OnSessionChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        CloseMenus();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

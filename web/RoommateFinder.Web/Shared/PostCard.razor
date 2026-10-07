@@ -1,0 +1,52 @@
+@inject ApiClient Api
+
+<div class="card h-100 post-card border-0 shadow-sm">
+    <a href="/posts/@Post.PostId" class="text-decoration-none text-body">
+        @if (!string.IsNullOrEmpty(Post.ThumbnailUrl))
+        {
+            <img src="@Api.Url(Post.ThumbnailUrl)" class="card-img-top thumb" alt="@Post.Title" loading="lazy" />
+        }
+        else
+        {
+            <div class="card-img-top thumb-placeholder"><i class="bi @(Post.PostType == PostType.HasRoom ? "bi-house-door" : "bi-person-badge")"></i></div>
+        }
+    </a>
+    <div class="card-body d-flex flex-column">
+        <div class="d-flex flex-wrap gap-1 mb-2">
+            <Badge Text="@Labels.PostTypeShort(Post.PostType)" Color="@(Post.PostType == PostType.HasRoom ? "primary" : "info")" />
+            @if (ShowStatus)
+            {
+                <Badge Text="@Labels.PostStatus(Post.Status)" Color="@Labels.PostStatusColor(Post.Status)" />
+            }
+            @if (Post.DistanceKm is { } km)
+            {
+                <Badge Text="@($"{km:0.0} km")" Color="light text-dark border" />
+            }
+        </div>
+        <a href="/posts/@Post.PostId" class="text-decoration-none text-body">
+            <h6 class="card-title text-truncate-2 mb-1">@Post.Title</h6>
+        </a>
+        <div class="text-danger fw-semibold">@Fmt.MoneyShort(Post.Price) <span class="small text-secondary fw-normal">@PostRules.PriceLabel(Post.PostType)</span></div>
+        <div class="small text-secondary mt-1"><i class="bi bi-geo-alt me-1"></i>@Post.AreaName, @Post.City</div>
+        <div class="small text-secondary"><i class="bi bi-people me-1"></i>Cần thêm @Post.NeededOccupants người · @Labels.Gender(Post.PreferredGender)</div>
+        <div class="mt-auto pt-2 d-flex align-items-center gap-2 small">
+            <UserAvatar Name="@Post.OwnerName" Url="@Post.OwnerAvatarUrl" Size="22" />
+            <span class="text-truncate">@Post.OwnerName</span>
+            @if (Post.OwnerRating > 0)
+            {
+                <span class="ms-auto text-nowrap"><i class="bi bi-star-fill star"></i> @Post.OwnerRating.ToString("0.0")</span>
+            }
+        </div>
+        @if (Actions != null)
+        {
+            <div class="border-top mt-2 pt-2">@Actions</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PostSummaryDto Post { get; set; } = null!;
+    [Parameter] public bool ShowStatus { get; set; }
+    /// <summary>Nút thao tác thêm ở cuối thẻ (dùng trong "Tin của tôi").</summary>
+    [Parameter] public RenderFragment? Actions { get; set; }
+}

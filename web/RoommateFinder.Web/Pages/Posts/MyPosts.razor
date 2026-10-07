@@ -1,0 +1,234 @@
+@page "/my-posts"
+@attribute [Authorize]
+@inject PostsApi PostsApi
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>Tin của tôi – RoommateFinder</PageTitle>
+
+<div class="container py-4">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <h1 class="h4 mb-0">Tin của tôi</h1>
+        <a href="/posts/new" class="btn btn-primary"><i class="bi bi-plus-circle me-1"></i>Đăng tin mới</a>
+    </div>
+
+    <ul class="nav nav-pills flex-nowrap overflow-auto mb-3 pb-1">
+        <li class="nav-item">
+            <a class="nav-link text-nowrap @(CurrentStatus == null ? "active" : "")" href="/my-posts">Tất cả</a>
+        </li>
+        @foreach (var s in PostStatus.All)
+        {
+            <li class="nav-item">
+                <a class="nav-link text-nowrap @(CurrentStatus == s ? "active" : "")" href="/my-posts?status=@s">@Labels.PostStatus(s)</a>
+            </li>
+        }
+    </ul>
+
+    @if (_error != null)
+    {
+        <ErrorAlert Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_posts == null)
+    {
+        <Loading />
+    }
+    else if (_posts.Count == 0)
+    {
+        <EmptyState Text="@(CurrentStatus == null ? "Bạn chưa đăng tin nào." : $"Không có tin ở trạng thái \"{Labels.PostStatus(CurrentStatus)}\".")" Icon="bi-file-earmark-text">
+            <a href="/posts/new" class="btn btn-primary mt-3">Đăng tin mới</a>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="row g-3">
+            @foreach (var post in _posts)
+            {
+                var p = post;
+                <div class="col-12 col-sm-6 col-lg-4 col-xl-3" @key="p.PostId">
+                    <PostCard Post="p" ShowStatus="true">
+                        <Actions>
+                            @if (!string.IsNullOrEmpty(p.RejectReason))
+                            {
+                                <div class="alert alert-danger small py-1 px-2 mb-2">
+                                    <strong>@(p.Status == PostStatus.Hidden ? "Lý do ẩn:" : "Lý do từ chối:")</strong>
+                                    <span style="white-space:pre-wrap">@p.RejectReason</span>
+                                </div>
+                            }
+                            @if (p.PendingRequestCount > 0)
+                            {
+                                <a href="/connections?tab=incoming" class="d-block small mb-2 text-decoration-none">
+                                    <i class="bi bi-person-plus me-1"></i>@p.PendingRequestCount yêu cầu kết nối đang chờ
+                                </a>
+                            }
+                            <div class="small text-secondary mb-2">
+                                <i class="bi bi-eye me-1"></i>@p.ViewCount lượt xem
+                                @if (p.ExpiredAt != null && p.Status is PostStatus.Approved or PostStatus.Expired)
+                                {
+                                    <span> · hết hạn @Fmt.Date(p.ExpiredAt)</span>
+                                }
+                            </div>
+                            <div class="d-flex flex-wrap gap-1">
+                                <a href="/posts/@p.PostId" class="btn btn-sm btn-outline-secondary" title="Xem"><i class="bi bi-eye"></i></a>
+                                @if (PostRules.CanEdit(p.Status))
+                                {
+                                    <a href="/posts/@p.PostId/edit" class="btn btn-sm btn-outline-primary" title="Sửa"><i class="bi bi-pencil"></i> Sửa</a>
+                                }
+                                @if (PostRules.CanExtend(p))
+                                {
+                                    <button class="btn btn-sm btn-outline-success" disabled="@(_busyId != null)" @onclick="() => ExtendAsync(p)" title="Gia hạn">
+                                        @if (_busyId == p.PostId && _busyAction == "extend") { <span class="spinner-border spinner-border-sm"></span> }
+                                        else { <i class="bi bi-arrow-repeat"></i> }
+                                        Gia hạn
+                                    </button>
+                                }
+                                @if (PostRules.CanClose(p.Status))
+                                {
+                                    <button class="btn btn-sm btn-outline-secondary" disabled="@(_busyId != null)" @onclick="() => AskConfirm(p, ConfirmKind.Close)" title="Đóng tin">
+                                        <i class="bi bi-lock"></i> Đóng
+                                    </button>
+                                }
+                                <button class="btn btn-sm btn-outline-danger ms-auto" disabled="@(_busyId != null)" @onclick="() => AskConfirm(p, ConfirmKind.Delete)" title="Xóa">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </Actions>
+                    </PostCard>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<Modal Show="_confirmPost != null" Title="@(_confirmKind == ConfirmKind.Delete ? "Xóa tin đăng" : "Đóng tin đăng")"
+       OnClose="CloseConfirm" CloseOnBackdrop="_busyId == null">
+    <ChildContent>
+        @if (_confirmKind == ConfirmKind.Delete)
+        {
+            <p class="mb-0">Bạn chắc chắn muốn xóa tin “<strong>@_confirmPost?.Title</strong>”? Các yêu cầu kết nối đang chờ sẽ hết hiệu lực. Thao tác này không thể hoàn tác.</p>
+        }
+        else
+        {
+            <p class="mb-0">Đóng tin “<strong>@_confirmPost?.Title</strong>” khi bạn đã tìm được người? Tin sẽ ngừng hiển thị và các yêu cầu kết nối đang chờ sẽ hết hiệu lực.</p>
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-outline-secondary" disabled="@(_busyId != null)" @onclick="CloseConfirm">Hủy</button>
+        <button class="btn @(_confirmKind == ConfirmKind.Delete ? "btn-danger" : "btn-primary")" disabled="@(_busyId != null)" @onclick="ConfirmAsync">
+            @if (_busyId != null) { <span class="spinner-border spinner-border-sm me-1"></span> }
+            @(_confirmKind == ConfirmKind.Delete ? "Xóa tin" : "Đóng tin")
+        </button>
+    </Footer>
+</Modal>
+
+@code {
+    [SupplyParameterFromQuery(Name = "status")] public string? Status { get; set; }
+
+    private enum ConfirmKind { Close, Delete }
+
+    /// <summary>Trạng thái hợp lệ trên URL; giá trị lạ coi như "Tất cả".</summary>
+    private string? CurrentStatus => Status != null && PostStatus.All.Contains(Status) ? Status : null;
+
+    private List<PostSummaryDto>? _posts;
+    private string? _error;
+    private int _loadVersion;
+
+    private long? _busyId;
+    private string? _busyAction;
+    private PostSummaryDto? _confirmPost;
+    private ConfirmKind _confirmKind;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var version = ++_loadVersion;
+        _error = null;
+        _posts = null;
+        try
+        {
+            var posts = await PostsApi.MineAsync(CurrentStatus);
+            if (version == _loadVersion) _posts = posts;
+        }
+        catch (ApiException ex)
+        {
+            if (version == _loadVersion) _error = ex.Message;
+        }
+    }
+
+    /// <summary>Tải lại danh sách không hiện spinner toàn trang.</summary>
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            _posts = await PostsApi.MineAsync(CurrentStatus);
+        }
+        catch (ApiException ex)
+        {
+            Toast.Error(ex);
+        }
+    }
+
+    private async Task ExtendAsync(PostSummaryDto p)
+    {
+        _busyId = p.PostId;
+        _busyAction = "extend";
+        try
+        {
+            var updated = await PostsApi.ExtendAsync(p.PostId);
+            Toast.Success($"Đã gia hạn tin đến {Fmt.Date(updated.ExpiredAt)}.");
+            await RefreshAsync();
+        }
+        catch (ApiException ex)
+        {
+            Toast.Error(ex);
+            await RefreshAsync();
+        }
+        finally
+        {
+            _busyId = null;
+            _busyAction = null;
+        }
+    }
+
+    private void AskConfirm(PostSummaryDto p, ConfirmKind kind)
+    {
+        _confirmPost = p;
+        _confirmKind = kind;
+    }
+
+    private void CloseConfirm()
+    {
+        if (_busyId == null) _confirmPost = null;
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_confirmPost is not { } p) return;
+        _busyId = p.PostId;
+        _busyAction = _confirmKind == ConfirmKind.Delete ? "delete" : "close";
+        try
+        {
+            if (_confirmKind == ConfirmKind.Delete)
+            {
+                await PostsApi.DeleteAsync(p.PostId);
+                Toast.Success("Đã xóa tin.");
+            }
+            else
+            {
+                await PostsApi.CloseAsync(p.PostId);
+                Toast.Success("Đã đóng tin.");
+            }
+        }
+        catch (ApiException ex)
+        {
+            Toast.Error(ex);
+        }
+        finally
+        {
+            _busyId = null;
+            _busyAction = null;
+            _confirmPost = null;
+        }
+        await RefreshAsync();
+    }
+}

@@ -1,0 +1,163 @@
+@page "/moderator/violations"
+@layout ModeratorLayout
+@attribute [Authorize(Roles = Roles.ModeratorOrAdmin)]
+@inject ModerationApi ModerationApi
+@inject NavigationManager Nav
+
+<PageTitle>Lịch sử vi phạm – RoommateFinder</PageTitle>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <h1 class="h4 mb-0"><i class="bi bi-clock-history me-2"></i>Lịch sử vi phạm</h1>
+    <form class="d-flex align-items-center gap-2" @onsubmit="ApplyFilter" @onsubmit:preventDefault="true">
+        <label class="small text-secondary text-nowrap" for="userIdFilter">Mã người dùng</label>
+        <input id="userIdFilter" type="number" min="1" class="form-control form-control-sm" style="width:120px" @bind="_userIdInput" placeholder="Tất cả" />
+        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel"></i> Lọc</button>
+        @if (UserId != null)
+        {
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ClearFilter">Bỏ lọc</button>
+        }
+    </form>
+</div>
+
+@if (UserId != null && _data is { Items.Count: > 0 })
+{
+    <p class="small">Đang xem vi phạm của <a href="/users/@UserId">@_data.Items[0].UserName</a> (#@UserId).</p>
+}
+
+@if (_loading && _data == null)
+{
+    <Loading />
+}
+else if (_error != null)
+{
+    <ErrorAlert Message="@_error" OnRetry="LoadAsync" />
+}
+else if (_data == null || _data.Items.Count == 0)
+{
+    <EmptyState Icon="bi-shield-check" Text="@(UserId != null ? "Người dùng này chưa có vi phạm nào." : "Chưa có vi phạm nào được ghi nhận.")" />
+}
+else
+{
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Người vi phạm</th>
+                        <th>Mức độ</th>
+                        <th>Hình thức</th>
+                        <th class="text-center">Số ngày khóa</th>
+                        <th>Ghi chú</th>
+                        <th>Người xử lý</th>
+                        <th>Báo cáo</th>
+                        <th>Ngày</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var v in _data.Items)
+                    {
+                        <tr>
+                            <td class="text-nowrap">
+                                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" title="Lọc theo người dùng này" @onclick="() => Navigate(v.UserId, 1)">@v.UserName</button>
+                                <a href="/users/@v.UserId" class="ms-1 small" title="Xem hồ sơ"><i class="bi bi-box-arrow-up-right"></i></a>
+                            </td>
+                            <td><Badge Text="@Labels.ViolationLevel(v.Level)" Color="@LevelColor(v.Level)" /></td>
+                            <td><Badge Text="@Labels.ViolationAction(v.Action)" Color="@ActionColor(v.Action)" /></td>
+                            <td class="text-center">@(v.SuspendDays?.ToString() ?? "—")</td>
+                            <td class="small" style="min-width:180px;white-space:pre-wrap">@(string.IsNullOrWhiteSpace(v.Note) ? "—" : v.Note)</td>
+                            <td>@v.HandlerName</td>
+                            <td class="text-nowrap">
+                                @if (v.ReportId != null)
+                                {
+                                    <span>#@v.ReportId</span>
+                                }
+                                else
+                                {
+                                    <span class="text-secondary small">Admin xử lý trực tiếp</span>
+                                }
+                                @if (v.PostId is { } pid)
+                                {
+                                    <div class="small"><a href="/posts/@pid">Tin #@pid</a></div>
+                                }
+                            </td>
+                            <td class="small text-nowrap">@Fmt.DateAndTime(v.CreatedAt)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="small text-secondary mt-2">Tổng cộng @_data.TotalCount vi phạm.</div>
+    <Pager Page="CurrentPage" TotalPages="_data.TotalPages" PageChanged="p => Navigate(UserId, p)" />
+}
+
+@code {
+    [SupplyParameterFromQuery] public long? UserId { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private PagedResult<ViolationDto>? _data;
+    private bool _loading;
+    private string? _error;
+    private string? _loadedKey;
+    private long? _userIdInput;
+
+    private int CurrentPage => PageNumber is > 0 ? PageNumber.Value : 1;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _userIdInput = UserId; // giữ ô nhập khớp URL (Back/Forward, bấm tên người dùng)
+        var key = $"{UserId}|{CurrentPage}";
+        if (key == _loadedKey) return;
+        _loadedKey = key;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _data = await ModerationApi.ViolationsAsync(UserId, CurrentPage);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+            _data = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void Navigate(long? userId, int page) =>
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["userId"] = userId is > 0 ? userId : null,
+            ["page"] = page > 1 ? page : null,
+        }));
+
+    private void ApplyFilter() => Navigate(_userIdInput, 1);
+
+    private void ClearFilter()
+    {
+        _userIdInput = null;
+        Navigate(null, 1);
+    }
+
+    private static string LevelColor(string level) => level switch
+    {
+        ViolationLevel.Light => "info",
+        ViolationLevel.Medium => "warning",
+        _ => "danger",
+    };
+
+    private static string ActionColor(string action) => action switch
+    {
+        ViolationAction.Warning => "secondary",
+        ViolationAction.HidePost => "warning",
+        ViolationAction.SuspendAccount => "danger",
+        _ => "dark",
+    };
+}

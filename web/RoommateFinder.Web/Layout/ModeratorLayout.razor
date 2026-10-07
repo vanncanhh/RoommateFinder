@@ -1,0 +1,14 @@
+@inherits LayoutComponentBase
+@layout MainLayout
+
+@* Khu kiểm duyệt: trang dùng @layout ModeratorLayout và [Authorize(Roles = Roles.ModeratorOrAdmin)] *@
+<ConsoleShell Title="Kiểm duyệt" Items="Items">@Body</ConsoleShell>
+
+@code {
+    private static readonly ConsoleShell.NavItem[] Items =
+    {
+        new("/moderator/posts", "Duyệt tin", "bi-clipboard-check"),
+        new("/moderator/reports", "Báo cáo vi phạm", "bi-flag"),
+        new("/moderator/violations", "Lịch sử vi phạm", "bi-clock-history"),
+    };
+}

@@ -1,0 +1,31 @@
+@* Khung hai cột cho khu kiểm duyệt / quản trị: menu bên trái (trên điện thoại thành thanh ngang), nội dung bên phải. *@
+<div class="container-fluid container-xl py-3">
+    <div class="row g-3">
+        <div class="col-12 col-lg-3 col-xl-2">
+            <div class="card shadow-sm">
+                <div class="card-body p-2">
+                    <div class="small text-uppercase text-secondary fw-semibold px-2 py-1 d-none d-lg-block">@Title</div>
+                    <nav class="nav console-nav flex-row flex-lg-column flex-nowrap overflow-auto gap-1">
+                        @foreach (var item in Items)
+                        {
+                            <NavLink class="nav-link text-nowrap" href="@item.Href">
+                                <i class="bi @item.Icon me-2"></i>@item.Label
+                            </NavLink>
+                        }
+                    </nav>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-lg-9 col-xl-10">
+            @ChildContent
+        </div>
+    </div>
+</div>
+
+@code {
+    public record NavItem(string Href, string Label, string Icon);
+
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public NavItem[] Items { get; set; } = Array.Empty<NavItem>();
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

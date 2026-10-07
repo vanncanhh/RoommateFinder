@@ -1,0 +1,355 @@
+@page "/users/{Id:long}"
+@inject ProfileApi ProfileApi
+@inject ModerationApi ModerationApi
+@inject AuthSession Session
+@inject ToastService Toast
+
+<PageTitle>@(_profile?.FullName ?? "Hồ sơ người dùng") – RoommateFinder</PageTitle>
+
+<div class="container py-4">
+    @if (_notFound)
+    {
+        <EmptyState Text="Người dùng không tồn tại hoặc đã bị khóa." Icon="bi-person-x">
+            <a href="/" class="btn btn-primary mt-3">Về trang chủ</a>
+        </EmptyState>
+    }
+    else if (_error != null)
+    {
+        <ErrorAlert Message="@_error" OnRetry="LoadProfileAsync" />
+    }
+    else if (_profile == null)
+    {
+        <Loading />
+    }
+    else
+    {
+        var u = _profile;
+        var isSelf = Session.IsAuthenticated && Session.UserId == u.UserId;
+        <div class="row g-4">
+            @* ------------------------------------------------------------ Hồ sơ *@
+            <div class="col-12 col-lg-4">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body text-center">
+                        <UserAvatar Name="@u.FullName" Url="@u.AvatarUrl" Size="96" />
+                        <h1 class="h5 mt-3 mb-1">@u.FullName</h1>
+                        <div class="mb-2"><Stars Value="u.AvgRating" Count="u.ReviewCount" /></div>
+                        @{
+                            var headline = string.Join(" · ", new[] { GenderText(u.Gender), Labels.Occupation(u.Occupation) }.Where(s => !string.IsNullOrEmpty(s)));
+                        }
+                        @if (!string.IsNullOrEmpty(headline))
+                        {
+                            <div class="text-secondary small">@headline</div>
+                        }
+                        @if (!string.IsNullOrEmpty(u.SchoolOrCompany))
+                        {
+                            <div class="small mt-1"><i class="bi @(u.Occupation == Occupation.Student ? "bi-mortarboard" : "bi-building") me-1"></i>@u.SchoolOrCompany</div>
+                        }
+                        <div class="small text-secondary mt-1"><i class="bi bi-calendar-check me-1"></i>Thành viên từ @Fmt.Date(u.CreatedAt)</div>
+
+                        @if (isSelf)
+                        {
+                            <a href="/profile" class="btn btn-outline-primary btn-sm mt-3"><i class="bi bi-pencil me-1"></i>Sửa hồ sơ của tôi</a>
+                        }
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(u.Bio))
+                    {
+                        <div class="card-body border-top">
+                            <h2 class="h6 fw-semibold">Giới thiệu</h2>
+                            <p class="mb-0 small" style="white-space:pre-wrap;word-break:break-word">@u.Bio</p>
+                        </div>
+                    }
+                    <div class="card-body border-top">
+                        <h2 class="h6 fw-semibold">Lối sống</h2>
+                        <ul class="list-unstyled small mb-0">
+                            <li class="d-flex justify-content-between py-1">
+                                <span class="text-secondary"><i class="bi bi-moon me-1"></i>Giờ ngủ</span>
+                                <span>@Or(Labels.SleepSchedule(u.SleepSchedule))</span>
+                            </li>
+                            <li class="d-flex justify-content-between py-1">
+                                <span class="text-secondary"><i class="bi bi-wind me-1"></i>Hút thuốc</span>
+                                <span>@YesNo(u.IsSmoker, "Có", "Không")</span>
+                            </li>
+                            <li class="d-flex justify-content-between py-1">
+                                <span class="text-secondary"><i class="bi bi-heart me-1"></i>Nuôi thú cưng</span>
+                                <span>@YesNo(u.HasPet, "Có", "Không")</span>
+                            </li>
+                            <li class="d-flex justify-content-between align-items-center py-1">
+                                <span class="text-secondary"><i class="bi bi-stars me-1"></i>Mức độ ngăn nắp</span>
+                                @if (u.CleanlinessLevel is { } c and >= 1 and <= 5)
+                                {
+                                    <span title="@c/5">
+                                        @for (var i = 1; i <= 5; i++)
+                                        {
+                                            <i class="bi @(i <= c ? "bi-circle-fill text-primary" : "bi-circle text-secondary") mx-1" style="font-size:.6rem"></i>
+                                        }
+                                        <span class="ms-1">@c/5</span>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="text-secondary">Chưa cập nhật</span>
+                                }
+                            </li>
+                        </ul>
+                    </div>
+                    @if (Session.IsAuthenticated && !isSelf)
+                    {
+                        <div class="card-body border-top text-center py-2">
+                            <button class="btn btn-link btn-sm text-danger text-decoration-none" @onclick="() => _reportOpen = true">
+                                <i class="bi bi-flag me-1"></i>Báo cáo người dùng
+                            </button>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="col-12 col-lg-8">
+                @* ------------------------------------------------------------ Tin đang đăng *@
+                <h2 class="h5 mb-3">Tin đang đăng</h2>
+                @if (_postsError != null)
+                {
+                    <ErrorAlert Message="@_postsError" OnRetry="LoadPostsAsync" />
+                }
+                else if (_posts == null)
+                {
+                    <Loading Small="true" />
+                }
+                else if (_posts.Count == 0)
+                {
+                    <div class="text-secondary small mb-4">Người dùng chưa có tin nào đang hiển thị.</div>
+                }
+                else
+                {
+                    <div class="row g-3 mb-4">
+                        @foreach (var p in _posts)
+                        {
+                            <div class="col-12 col-sm-6 col-xl-4" @key="p.PostId">
+                                <PostCard Post="p" />
+                            </div>
+                        }
+                    </div>
+                }
+
+                @* ------------------------------------------------------------ Đánh giá *@
+                <h2 class="h5 mb-3">Đánh giá <span class="text-secondary fw-normal fs-6">(@u.ReviewCount)</span></h2>
+                @if (_reviewsError != null)
+                {
+                    <ErrorAlert Message="@_reviewsError" OnRetry="LoadReviewsAsync" />
+                }
+                else if (_reviews == null)
+                {
+                    <Loading Small="true" />
+                }
+                else if (_reviews.Items.Count == 0)
+                {
+                    <EmptyState Text="Chưa có đánh giá nào." Icon="bi-chat-square-text" />
+                }
+                else
+                {
+                    <div class="d-flex flex-column gap-2">
+                        @foreach (var review in _reviews.Items)
+                        {
+                            var r = review;
+                            <div class="card border-0 shadow-sm" @key="r.ReviewId">
+                                <div class="card-body">
+                                    <div class="d-flex align-items-start gap-2">
+                                        <UserAvatar Name="@r.ReviewerName" Url="@r.ReviewerAvatarUrl" Size="40" />
+                                        <div class="flex-grow-1 min-w-0">
+                                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                                <a href="/users/@r.ReviewerId" class="fw-semibold text-decoration-none">@r.ReviewerName</a>
+                                                <Stars Value="r.Rating" ShowValue="false" />
+                                                <span class="small text-secondary ms-auto">@Fmt.Date(r.CreatedAt)</span>
+                                            </div>
+                                            @if (!string.IsNullOrEmpty(r.PostTitle))
+                                            {
+                                                <div class="small text-secondary"><i class="bi bi-house me-1"></i>@r.PostTitle</div>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(r.Comment))
+                                            {
+                                                <p class="mb-0 mt-1" style="white-space:pre-wrap;word-break:break-word">@r.Comment</p>
+                                            }
+                                            @if (CanHide(r))
+                                            {
+                                                <div class="text-end mt-1">
+                                                    <button class="btn btn-sm btn-outline-danger" disabled="@(_hiding != null)" @onclick="() => _confirmHide = r">
+                                                        <i class="bi bi-eye-slash me-1"></i>Ẩn đánh giá
+                                                    </button>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <Pager Page="_reviews.Page" TotalPages="_reviews.TotalPages" PageChanged="GoToReviewPage" />
+                }
+            </div>
+        </div>
+
+        <Modal Show="_confirmHide != null" Title="Ẩn đánh giá" OnClose="CloseHide" CloseOnBackdrop="_hiding == null">
+            <ChildContent>
+                <p class="mb-0">Ẩn đánh giá của <strong>@_confirmHide?.ReviewerName</strong>? Đánh giá sẽ không còn hiển thị công khai và điểm trung bình của người dùng được tính lại.</p>
+            </ChildContent>
+            <Footer>
+                <button class="btn btn-outline-secondary" disabled="@(_hiding != null)" @onclick="CloseHide">Hủy</button>
+                <button class="btn btn-danger" disabled="@(_hiding != null)" @onclick="HideAsync">
+                    @if (_hiding != null) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                    Ẩn đánh giá
+                </button>
+            </Footer>
+        </Modal>
+
+        <ReportModal Show="_reportOpen" ReportedUserId="u.UserId" OnClose="() => _reportOpen = false" />
+    }
+</div>
+
+@code {
+    private const int ReviewPageSize = 10;
+
+    [Parameter] public long Id { get; set; }
+
+    private PublicProfileDto? _profile;
+    private string? _error;
+    private bool _notFound;
+
+    private List<PostSummaryDto>? _posts;
+    private string? _postsError;
+
+    private PagedResult<ReviewDto>? _reviews;
+    private string? _reviewsError;
+    private int _reviewPage = 1;
+
+    private long _loadedId;
+    private bool _reportOpen;
+    private ReviewDto? _confirmHide;
+    private long? _hiding;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedId == Id) return;
+        // Đổi người dùng: xóa dữ liệu cũ, về trang đánh giá đầu tiên.
+        _loadedId = Id;
+        _reviewPage = 1;
+        _profile = null;
+        _posts = null;
+        _reviews = null;
+        _reportOpen = false;
+        _confirmHide = null;
+        await Task.WhenAll(LoadProfileAsync(), LoadPostsAsync(), LoadReviewsAsync());
+    }
+
+    private async Task LoadProfileAsync()
+    {
+        var id = Id;
+        _error = null;
+        _notFound = false;
+        try
+        {
+            var profile = await ProfileApi.GetPublicAsync(id);
+            if (id == Id) _profile = profile;
+        }
+        catch (ApiException ex) when (ex.IsNotFound)
+        {
+            if (id == Id) _notFound = true;
+        }
+        catch (ApiException ex)
+        {
+            if (id == Id) _error = ex.Message;
+        }
+    }
+
+    private async Task LoadPostsAsync()
+    {
+        var id = Id;
+        _postsError = null;
+        _posts = null;
+        try
+        {
+            var posts = await ProfileApi.GetPostsAsync(id);
+            if (id == Id) _posts = posts;
+        }
+        catch (ApiException ex)
+        {
+            if (id == Id) _postsError = ex.Message;
+        }
+    }
+
+    private async Task LoadReviewsAsync()
+    {
+        var id = Id;
+        var page = _reviewPage;
+        _reviewsError = null;
+        try
+        {
+            var reviews = await ProfileApi.GetReviewsAsync(id, page, ReviewPageSize);
+            if (id != Id || page != _reviewPage) return;
+            // Trang hiện tại trống sau khi ẩn đánh giá cuối cùng của trang → lùi một trang.
+            if (reviews.Items.Count == 0 && page > 1 && reviews.TotalCount > 0)
+            {
+                _reviewPage = Math.Max(1, reviews.TotalPages);
+                await LoadReviewsAsync();
+                return;
+            }
+            _reviews = reviews;
+        }
+        catch (ApiException ex)
+        {
+            if (id == Id) _reviewsError = ex.Message;
+        }
+    }
+
+    private async Task GoToReviewPage(int page)
+    {
+        _reviewPage = page;
+        await LoadReviewsAsync();
+    }
+
+    /// <summary>BR-09: kiểm duyệt viên không ẩn đánh giá liên quan đến chính mình.</summary>
+    private bool CanHide(ReviewDto r) =>
+        Session.IsModerator && r.ReviewerId != Session.UserId && r.RevieweeId != Session.UserId && !r.IsHidden;
+
+    private void CloseHide()
+    {
+        if (_hiding == null) _confirmHide = null;
+    }
+
+    private async Task HideAsync()
+    {
+        if (_confirmHide is not { } r) return;
+        _hiding = r.ReviewId;
+        try
+        {
+            await ModerationApi.HideReviewAsync(r.ReviewId);
+            Toast.Success("Đã ẩn đánh giá.");
+            _confirmHide = null;
+            await Task.WhenAll(LoadReviewsAsync(), ReloadProfileQuietAsync());
+        }
+        catch (ApiException ex)
+        {
+            Toast.Error(ex);
+        }
+        finally
+        {
+            _hiding = null;
+        }
+    }
+
+    /// <summary>Cập nhật điểm trung bình / số đánh giá mà không hiện spinner toàn trang.</summary>
+    private async Task ReloadProfileQuietAsync()
+    {
+        try
+        {
+            var profile = await ProfileApi.GetPublicAsync(Id);
+            if (profile.UserId == Id) _profile = profile;
+        }
+        catch (ApiException ex)
+        {
+            Toast.Error(ex);
+        }
+    }
+
+    private static string GenderText(string? g) => g is Gender.Male or Gender.Female or Gender.Other ? Labels.Gender(g) : "";
+    private static string Or(string? v) => string.IsNullOrEmpty(v) ? "Chưa cập nhật" : v;
+    private static string YesNo(bool? v, string yes, string no) => v switch { true => yes, false => no, null => "Chưa cập nhật" };
+}

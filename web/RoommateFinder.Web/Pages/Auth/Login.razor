@@ -1,0 +1,107 @@
+@page "/login"
+@inject AuthApi AuthApi
+@inject AuthSession Session
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>Đăng nhập – RoommateFinder</PageTitle>
+
+<div class="container py-5" style="max-width:440px">
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-4">
+            <h1 class="h4 mb-1">Đăng nhập</h1>
+            <p class="text-secondary mb-4">Chào mừng bạn quay lại RoommateFinder</p>
+
+            <ErrorAlert Message="@_error" />
+
+            <EditForm Model="_model" OnValidSubmit="SubmitAsync" FormName="login">
+                <DataAnnotationsValidator />
+                <div class="mb-3">
+                    <label class="form-label" for="email">Email</label>
+                    <InputText id="email" class="form-control" @bind-Value="_model.Email" autocomplete="email" placeholder="email@example.com" />
+                    <ValidationMessage For="() => _model.Email" />
+                </div>
+                <div class="mb-2">
+                    <label class="form-label" for="password">Mật khẩu</label>
+                    <InputText id="password" type="password" class="form-control" @bind-Value="_model.Password" autocomplete="current-password" />
+                    <ValidationMessage For="() => _model.Password" />
+                </div>
+                <div class="text-end mb-3"><a href="/forgot-password" class="small">Quên mật khẩu?</a></div>
+                <button type="submit" class="btn btn-primary w-100" disabled="@_busy">
+                    @if (_busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                    Đăng nhập
+                </button>
+            </EditForm>
+
+            <div class="text-center mt-3 small">Chưa có tài khoản? <a href="/register">Đăng ký ngay</a></div>
+
+            @if (Demo)
+            {
+                <details class="mt-4 small">
+                    <summary class="text-secondary">Tài khoản demo (môi trường phát triển)</summary>
+                    @foreach (var (role, email, pw) in DemoAccounts)
+                    {
+                        <button type="button" class="btn btn-link btn-sm d-block p-0" @onclick="() => { _model.Email = email; _model.Password = pw; }">@role: @email</button>
+                    }
+                </details>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private static readonly bool Demo = true; // ẩn khi triển khai thật
+    private static readonly (string, string, string)[] DemoAccounts =
+    {
+        ("Admin", "admin@roommate.test", "Admin@123"),
+        ("Moderator", "mod1@roommate.test", "Mod@12345"),
+        ("Người dùng", "user1@roommate.test", "User@1234"),
+    };
+
+    private readonly LoginModel _model = new();
+    private bool _busy;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        if (Session.IsAuthenticated) Nav.NavigateTo(SafeReturnUrl(), replace: true);
+    }
+
+    private async Task SubmitAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var res = await AuthApi.LoginAsync(new LoginRequest { Email = _model.Email.Trim(), Password = _model.Password });
+            await Session.LoginAsync(res);
+            Toast.Success($"Xin chào, {res.User.FullName}!");
+            Nav.NavigateTo(SafeReturnUrl(), replace: true);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message; // sai mật khẩu, khóa tạm 15 phút (423), tài khoản bị khóa (403)
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>Chỉ cho phép đường dẫn nội bộ — chống open redirect.</summary>
+    private string SafeReturnUrl() =>
+        !string.IsNullOrEmpty(ReturnUrl) && ReturnUrl.StartsWith('/') && !ReturnUrl.StartsWith("//") && !ReturnUrl.StartsWith("/login")
+            ? ReturnUrl : "/";
+
+    private class LoginModel
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Vui lòng nhập email")]
+        [System.ComponentModel.DataAnnotations.EmailAddress(ErrorMessage = "Email không hợp lệ")]
+        public string Email { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Vui lòng nhập mật khẩu")]
+        public string Password { get; set; } = "";
+    }
+}

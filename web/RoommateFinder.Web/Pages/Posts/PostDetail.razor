@@ -1,0 +1,524 @@
+@page "/posts/{Id:long}"
+@inject PostsApi PostsApi
+@inject ConnectionsApi ConnectionsApi
+@inject AuthSession Session
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>@(_post?.Title ?? "Chi tiết tin") – RoommateFinder</PageTitle>
+
+<div class="container py-4">
+    @if (_notFound)
+    {
+        <EmptyState Text="Tin không tồn tại hoặc đã bị ẩn." Icon="bi-file-earmark-x">
+            <div class="mt-3 d-flex flex-wrap justify-content-center gap-2">
+                <a href="/search" class="btn btn-primary">Tìm tin khác</a>
+                <a href="/" class="btn btn-outline-secondary">Về trang chủ</a>
+            </div>
+        </EmptyState>
+    }
+    else if (_error != null)
+    {
+        <ErrorAlert Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_post == null)
+    {
+        <Loading />
+    }
+    else
+    {
+        var p = _post;
+        var isPublic = PostRules.IsPublic(p.Status, p.ExpiredAt);
+
+        @if (Session.IsModerator && !p.IsOwner && p.Status == PostStatus.Pending)
+        {
+            <div class="alert alert-info d-flex flex-wrap align-items-center gap-2">
+                <i class="bi bi-shield-check"></i>
+                <span class="flex-grow-1">Tin này đang chờ duyệt.</span>
+                <a href="/moderator/posts" class="btn btn-sm btn-info">Mở hàng đợi kiểm duyệt</a>
+            </div>
+        }
+
+        <div class="row g-4">
+            @* ------------------------------------------------------------ Cột trái: ảnh + nội dung *@
+            <div class="col-12 col-lg-8">
+                @if (p.Images.Count > 0)
+                {
+                    var images = p.Images.OrderBy(i => i.SortOrder).ToList();
+                    var index = Math.Clamp(_imageIndex, 0, images.Count - 1);
+                    <div class="position-relative mb-2">
+                        <img src="@Api.Url(images[index].ImageUrl)" alt="@p.Title" class="w-100 rounded gallery-main" />
+                        @if (images.Count > 1)
+                        {
+                            <button type="button" class="btn btn-light btn-sm rounded-circle position-absolute top-50 start-0 translate-middle-y ms-2 shadow-sm"
+                                    aria-label="Ảnh trước" @onclick="() => _imageIndex = (index - 1 + images.Count) % images.Count">
+                                <i class="bi bi-chevron-left"></i>
+                            </button>
+                            <button type="button" class="btn btn-light btn-sm rounded-circle position-absolute top-50 end-0 translate-middle-y me-2 shadow-sm"
+                                    aria-label="Ảnh sau" @onclick="() => _imageIndex = (index + 1) % images.Count">
+                                <i class="bi bi-chevron-right"></i>
+                            </button>
+                            <span class="badge text-bg-dark position-absolute bottom-0 end-0 m-2 opacity-75">@(index + 1)/@images.Count</span>
+                        }
+                    </div>
+                    @if (images.Count > 1)
+                    {
+                        <div class="d-flex gap-2 overflow-auto pb-2 mb-3">
+                            @for (var i = 0; i < images.Count; i++)
+                            {
+                                var idx = i;
+                                <img src="@Api.Url(images[idx].ImageUrl)" alt="Ảnh @(idx + 1)" class="rounded gallery-thumb flex-shrink-0 @(idx == index ? "active" : "")"
+                                     @onclick="() => _imageIndex = idx" />
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="rounded bg-body-secondary d-flex align-items-center justify-content-center text-secondary mb-3 gallery-main">
+                        <div class="text-center">
+                            <i class="bi @(p.PostType == PostType.HasRoom ? "bi-house-door" : "bi-person-badge") display-4 d-block"></i>
+                            <span class="small">Tin không có ảnh</span>
+                        </div>
+                    </div>
+                }
+
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap gap-1 mb-2">
+                            <Badge Text="@Labels.PostType(p.PostType)" Color="@(p.PostType == PostType.HasRoom ? "primary" : "info")" />
+                            @if (p.IsOwner || !isPublic)
+                            {
+                                <Badge Text="@Labels.PostStatus(p.Status)" Color="@Labels.PostStatusColor(p.Status)" />
+                            }
+                            @if (p.Status == PostStatus.Approved && !isPublic)
+                            {
+                                <Badge Text="Đã quá hạn hiển thị" Color="secondary" />
+                            }
+                        </div>
+                        <h1 class="h4 mb-2">@p.Title</h1>
+                        <div class="fs-4 fw-bold text-danger mb-2">
+                            @Fmt.Money(p.Price) <span class="fs-6 fw-normal text-secondary">@PostRules.PriceLabel(p.PostType)</span>
+                        </div>
+                        <div class="text-secondary mb-3">
+                            <i class="bi bi-geo-alt me-1"></i>
+                            @if (!string.IsNullOrEmpty(p.Address)) { <span>@p.Address, </span> }
+                            @p.AreaName@(string.IsNullOrEmpty(p.District) ? "" : $", {p.District}"), @p.City
+                            @if (p.Latitude is { } lat && p.Longitude is { } lng)
+                            {
+                                <a class="ms-2 small" target="_blank" rel="noopener noreferrer"
+                                   href="@($"https://www.google.com/maps?q={lat.ToString(System.Globalization.CultureInfo.InvariantCulture)},{lng.ToString(System.Globalization.CultureInfo.InvariantCulture)}")">
+                                    <i class="bi bi-map"></i> Xem bản đồ
+                                </a>
+                            }
+                        </div>
+
+                        <div class="row g-2 mb-3 small">
+                            <div class="col-6 col-md-3">
+                                <div class="border rounded p-2 h-100">
+                                    <div class="text-secondary">@(p.PostType == PostType.HasRoom ? "Đang ở" : "Nhóm hiện có")</div>
+                                    <div class="fw-semibold"><i class="bi bi-people me-1"></i>@p.CurrentOccupants người</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="border rounded p-2 h-100">
+                                    <div class="text-secondary">@(p.PostType == PostType.HasRoom ? "Còn trống" : "Cần tìm chỗ cho")</div>
+                                    <div class="fw-semibold"><i class="bi bi-person-plus me-1"></i>@p.NeededOccupants người</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="border rounded p-2 h-100">
+                                    <div class="text-secondary">Giới tính</div>
+                                    <div class="fw-semibold"><i class="bi bi-gender-ambiguous me-1"></i>@Labels.Gender(p.PreferredGender)</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="border rounded p-2 h-100">
+                                    <div class="text-secondary">Lượt xem</div>
+                                    <div class="fw-semibold"><i class="bi bi-eye me-1"></i>@p.ViewCount</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (p.Amenities.Count > 0)
+                        {
+                            <h2 class="h6 fw-semibold">Tiện ích</h2>
+                            <div class="d-flex flex-wrap gap-2 mb-3">
+                                @foreach (var a in p.Amenities)
+                                {
+                                    <span class="badge rounded-pill text-bg-light border fw-normal"><i class="bi bi-check2 text-success me-1"></i>@a.Name</span>
+                                }
+                            </div>
+                        }
+
+                        <h2 class="h6 fw-semibold">Mô tả</h2>
+                        @if (string.IsNullOrWhiteSpace(p.Description))
+                        {
+                            <p class="text-secondary fst-italic">Chưa có mô tả.</p>
+                        }
+                        else
+                        {
+                            <p style="white-space:pre-wrap;word-break:break-word">@p.Description</p>
+                        }
+
+                        <div class="small text-secondary border-top pt-2 d-flex flex-wrap gap-3">
+                            <span><i class="bi bi-calendar me-1"></i>Đăng lúc @Fmt.DateAndTime(p.CreatedAt)</span>
+                            @if (p.UpdatedAt != null)
+                            {
+                                <span><i class="bi bi-pencil me-1"></i>Cập nhật @Fmt.DateAndTime(p.UpdatedAt)</span>
+                            }
+                            @if (p.ExpiredAt != null)
+                            {
+                                <span><i class="bi bi-hourglass-split me-1"></i>Hết hạn @Fmt.Date(p.ExpiredAt)</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* ------------------------------------------------------------ Cột phải: chủ tin + thao tác *@
+            <div class="col-12 col-lg-4">
+                @if (p.IsOwner)
+                {
+                    <div class="card border-0 shadow-sm mb-3">
+                        <div class="card-body">
+                            <h2 class="h6 fw-semibold mb-2">Quản lý tin của bạn</h2>
+                            <div class="mb-2">Trạng thái: <Badge Text="@Labels.PostStatus(p.Status)" Color="@Labels.PostStatusColor(p.Status)" /></div>
+                            @if (!string.IsNullOrEmpty(p.RejectReason))
+                            {
+                                <div class="alert alert-danger small py-2">
+                                    <strong>@(p.Status == PostStatus.Hidden ? "Lý do ẩn:" : "Lý do từ chối:")</strong>
+                                    <span style="white-space:pre-wrap">@p.RejectReason</span>
+                                </div>
+                            }
+                            @if (p.Status == PostStatus.Pending)
+                            {
+                                <div class="small text-secondary mb-2">Tin đang chờ kiểm duyệt viên duyệt.</div>
+                            }
+                            @if (p.ExtendCount > 0)
+                            {
+                                <div class="small text-secondary mb-2">Đã gia hạn @p.ExtendCount/@PostRules.MaxExtend lần.</div>
+                            }
+                            <div class="d-grid gap-2">
+                                @if (PostRules.CanEdit(p))
+                                {
+                                    <a href="/posts/@p.PostId/edit" class="btn btn-outline-primary @(_busy ? "disabled" : "")"><i class="bi bi-pencil me-1"></i>Sửa tin</a>
+                                }
+                                @if (PostRules.CanExtend(p))
+                                {
+                                    <button class="btn btn-outline-success" disabled="@_busy" @onclick="ExtendAsync">
+                                        @if (_busyAction == "extend") { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                        <i class="bi bi-arrow-repeat me-1"></i>Gia hạn
+                                    </button>
+                                }
+                                @if (PostRules.CanClose(p.Status))
+                                {
+                                    <button class="btn btn-outline-secondary" disabled="@_busy" @onclick="() => _confirm = ConfirmKind.Close">
+                                        <i class="bi bi-lock me-1"></i>Đóng tin (đã tìm được người)
+                                    </button>
+                                }
+                                <button class="btn btn-outline-danger" disabled="@_busy" @onclick="() => _confirm = ConfirmKind.Delete">
+                                    <i class="bi bi-trash me-1"></i>Xóa tin
+                                </button>
+                                <a href="/connections?tab=incoming" class="btn btn-link btn-sm">Xem yêu cầu kết nối gửi tới tin</a>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center gap-3 mb-2">
+                            <UserAvatar Name="@p.OwnerName" Url="@p.OwnerAvatarUrl" Size="56" />
+                            <div class="min-w-0">
+                                <a href="/users/@p.OwnerId" class="fw-semibold text-decoration-none d-block text-truncate">@p.OwnerName</a>
+                                <Stars Value="p.OwnerRating" Count="p.OwnerReviewCount" />
+                            </div>
+                        </div>
+                        @{
+                            var ownerInfo = string.Join(" · ", new[] { OwnerGender(p.OwnerGender), Labels.Occupation(p.OwnerOccupation) }.Where(s => !string.IsNullOrEmpty(s)));
+                        }
+                        @if (!string.IsNullOrEmpty(ownerInfo))
+                        {
+                            <div class="small text-secondary mb-2">@ownerInfo</div>
+                        }
+                        @if (!string.IsNullOrEmpty(p.OwnerPhone))
+                        {
+                            <a href="tel:@p.OwnerPhone" class="btn btn-success w-100 mb-2"><i class="bi bi-telephone me-1"></i>@p.OwnerPhone</a>
+                        }
+                        else if (!p.IsOwner)
+                        {
+                            <div class="small text-secondary bg-body-tertiary rounded p-2 mb-2">
+                                <i class="bi bi-telephone-x me-1"></i>Số điện thoại hiển thị sau khi yêu cầu kết nối được chấp nhận
+                            </div>
+                        }
+                        <a href="/users/@p.OwnerId" class="btn btn-outline-secondary btn-sm w-100">Xem hồ sơ & đánh giá</a>
+                    </div>
+                </div>
+
+                @if (!p.IsOwner)
+                {
+                    <div class="card border-0 shadow-sm mb-3">
+                        <div class="card-body d-grid gap-2">
+                            @if (!Session.IsAuthenticated)
+                            {
+                                <a href="@LoginHref" class="btn btn-primary"><i class="bi bi-box-arrow-in-right me-1"></i>Đăng nhập để kết nối</a>
+                            }
+                            else
+                            {
+                                @if (p.MyRequestStatus != null)
+                                {
+                                    <div class="d-flex flex-wrap align-items-center gap-2 small">
+                                        <span>Yêu cầu của bạn:</span>
+                                        <Badge Text="@Labels.RequestStatus(p.MyRequestStatus)" Color="@Labels.RequestStatusColor(p.MyRequestStatus)" />
+                                        <a href="/connections?tab=outgoing" class="ms-auto">Xem yêu cầu</a>
+                                    </div>
+                                }
+                                @if (p.CanSendRequest)
+                                {
+                                    <button class="btn btn-primary" disabled="@_busy" @onclick="OpenRequest">
+                                        <i class="bi bi-send me-1"></i>@(p.MyRequestStatus != null ? "Gửi lại yêu cầu kết nối" : "Gửi yêu cầu kết nối")
+                                    </button>
+                                }
+                                else if (p.MyRequestStatus == null && !isPublic)
+                                {
+                                    <div class="small text-secondary">Tin không còn hiển thị nên không thể gửi yêu cầu kết nối.</div>
+                                }
+                                else if (p.MyRequestStatus == null && p.NeededOccupants <= 0)
+                                {
+                                    <div class="small text-secondary">Tin đã đủ người.</div>
+                                }
+                                @if (isPublic || p.IsSaved)
+                                {
+                                    <button class="btn @(p.IsSaved ? "btn-warning" : "btn-outline-warning")" disabled="@_busy" @onclick="ToggleSaveAsync">
+                                        @if (_busyAction == "save") { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                        <i class="bi @(p.IsSaved ? "bi-bookmark-fill" : "bi-bookmark") me-1"></i>@(p.IsSaved ? "Bỏ lưu tin" : "Lưu tin")
+                                    </button>
+                                }
+                                <button class="btn btn-link btn-sm text-danger text-decoration-none" @onclick="() => _reportOpen = true">
+                                    <i class="bi bi-flag me-1"></i>Báo cáo tin
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <Modal Show="_requestOpen" Title="Gửi yêu cầu kết nối" OnClose="CloseRequest" CloseOnBackdrop="!_busy">
+            <ChildContent>
+                <p class="small text-secondary">Gửi lời nhắn tới <strong>@p.OwnerName</strong> về tin “@p.Title”. Khi yêu cầu được chấp nhận, hai bạn có thể nhắn tin và xem số điện thoại của nhau.</p>
+                <label class="form-label" for="req-msg">Lời nhắn (không bắt buộc)</label>
+                <textarea id="req-msg" class="form-control" rows="4" maxlength="500" @bind="_requestMessage" @bind:event="oninput"
+                          placeholder="Giới thiệu ngắn về bạn: nghề nghiệp, giờ giấc sinh hoạt, thời gian dự kiến chuyển đến…"></textarea>
+                <div class="form-text text-end">@(_requestMessage?.Length ?? 0)/500</div>
+            </ChildContent>
+            <Footer>
+                <button class="btn btn-outline-secondary" disabled="@_busy" @onclick="CloseRequest">Hủy</button>
+                <button class="btn btn-primary" disabled="@(_busy || (_requestMessage?.Length ?? 0) > 500)" @onclick="SendRequestAsync">
+                    @if (_busyAction == "request") { <span class="spinner-border spinner-border-sm me-1"></span> }
+                    Gửi yêu cầu
+                </button>
+            </Footer>
+        </Modal>
+
+        <Modal Show="_confirm != ConfirmKind.None" Title="@(_confirm == ConfirmKind.Delete ? "Xóa tin đăng" : "Đóng tin đăng")"
+               OnClose="() => _confirm = ConfirmKind.None" CloseOnBackdrop="!_busy">
+            <ChildContent>
+                @if (_confirm == ConfirmKind.Delete)
+                {
+                    <p class="mb-0">Bạn chắc chắn muốn xóa tin “<strong>@p.Title</strong>”? Các yêu cầu kết nối đang chờ sẽ hết hiệu lực. Thao tác này không thể hoàn tác.</p>
+                }
+                else
+                {
+                    <p class="mb-0">Đóng tin khi bạn đã tìm được người. Tin sẽ ngừng hiển thị và các yêu cầu kết nối đang chờ sẽ hết hiệu lực. Tiếp tục?</p>
+                }
+            </ChildContent>
+            <Footer>
+                <button class="btn btn-outline-secondary" disabled="@_busy" @onclick="() => _confirm = ConfirmKind.None">Hủy</button>
+                <button class="btn @(_confirm == ConfirmKind.Delete ? "btn-danger" : "btn-primary")" disabled="@_busy" @onclick="ConfirmAsync">
+                    @if (_busyAction is "delete" or "close") { <span class="spinner-border spinner-border-sm me-1"></span> }
+                    @(_confirm == ConfirmKind.Delete ? "Xóa tin" : "Đóng tin")
+                </button>
+            </Footer>
+        </Modal>
+
+        <ReportModal Show="_reportOpen" PostId="p.PostId" OnClose="() => _reportOpen = false" />
+    }
+</div>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private enum ConfirmKind { None, Close, Delete }
+
+    private PostDetailDto? _post;
+    private string? _error;
+    private bool _notFound;
+    private int _imageIndex;
+    private long _loadedId;
+
+    private string? _busyAction;
+    private bool _busy => _busyAction != null;
+    private bool _requestOpen;
+    private string? _requestMessage;
+    private ConfirmKind _confirm;
+    private bool _reportOpen;
+
+    private string LoginHref => "/login?returnUrl=" + Uri.EscapeDataString("/" + Nav.ToBaseRelativePath(Nav.Uri));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedId == Id && (_post != null || _notFound)) return;
+        _loadedId = Id;
+        _imageIndex = 0;
+        _requestOpen = false;
+        _reportOpen = false;
+        _confirm = ConfirmKind.None;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _notFound = false;
+        _post = null;
+        await ReloadAsync();
+    }
+
+    /// <summary>Tải lại tin mà không xóa nội dung đang hiển thị (sau thao tác).</summary>
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            var post = await PostsApi.GetAsync(Id);
+            if (post.PostId == Id) _post = post;
+        }
+        catch (ApiException ex) when (ex.IsNotFound)
+        {
+            _post = null;
+            _notFound = true;
+        }
+        catch (ApiException ex)
+        {
+            if (_post == null) _error = ex.Message;
+            else Toast.Error(ex);
+        }
+    }
+
+    private static string OwnerGender(string? g) => g is Gender.Male or Gender.Female or Gender.Other ? Labels.Gender(g) : "";
+
+    private void OpenRequest()
+    {
+        _requestMessage = null;
+        _requestOpen = true;
+    }
+
+    private void CloseRequest()
+    {
+        if (!_busy) _requestOpen = false;
+    }
+
+    private async Task SendRequestAsync()
+    {
+        if (_post == null || (_requestMessage?.Length ?? 0) > 500) return;
+        _busyAction = "request";
+        try
+        {
+            await ConnectionsApi.SendAsync(_post.PostId, string.IsNullOrWhiteSpace(_requestMessage) ? null : _requestMessage.Trim());
+            Toast.Success("Đã gửi yêu cầu kết nối. Chủ tin sẽ nhận được thông báo.");
+            _requestOpen = false;
+            await ReloadAsync();
+        }
+        catch (ApiException ex)
+        {
+            Toast.Error(ex);
+            if (ex.IsConflict || ex.IsNotFound) { _requestOpen = false; await ReloadAsync(); }
+        }
+        finally
+        {
+            _busyAction = null;
+        }
+    }
+
+    private async Task ToggleSaveAsync()
+    {
+        if (_post == null) return;
+        _busyAction = "save";
+        try
+        {
+            if (_post.IsSaved)
+            {
+                await PostsApi.UnsaveAsync(_post.PostId);
+                _post.IsSaved = false;
+                Toast.Info("Đã bỏ lưu tin.");
+            }
+            else
+            {
+                await PostsApi.SaveAsync(_post.PostId);
+                _post.IsSaved = true;
+                Toast.Success("Đã lưu tin. Xem lại trong mục Tin đã lưu.");
+            }
+        }
+        catch (ApiException ex)
+        {
+            Toast.Error(ex);
+        }
+        finally
+        {
+            _busyAction = null;
+        }
+    }
+
+    private async Task ExtendAsync()
+    {
+        if (_post == null) return;
+        _busyAction = "extend";
+        try
+        {
+            _post = await PostsApi.ExtendAsync(_post.PostId);
+            Toast.Success($"Đã gia hạn tin đến {Fmt.Date(_post.ExpiredAt)}.");
+        }
+        catch (ApiException ex)
+        {
+            Toast.Error(ex);
+            await ReloadAsync();
+        }
+        finally
+        {
+            _busyAction = null;
+        }
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_post == null) return;
+        var kind = _confirm;
+        _busyAction = kind == ConfirmKind.Delete ? "delete" : "close";
+        try
+        {
+            if (kind == ConfirmKind.Delete)
+            {
+                await PostsApi.DeleteAsync(_post.PostId);
+                Toast.Success("Đã xóa tin.");
+                _confirm = ConfirmKind.None;
+                Nav.NavigateTo("/my-posts");
+                return;
+            }
+            _post = await PostsApi.CloseAsync(_post.PostId);
+            Toast.Success("Đã đóng tin.");
+            _confirm = ConfirmKind.None;
+        }
+        catch (ApiException ex)
+        {
+            Toast.Error(ex);
+            _confirm = ConfirmKind.None;
+            await ReloadAsync();
+        }
+        finally
+        {
+            _busyAction = null;
+        }
+    }
+}

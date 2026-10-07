@@ -1,0 +1,342 @@
+@page "/connections"
+@attribute [Authorize]
+@implements IDisposable
+@inject ConnectionsApi ConnectionsApi
+@inject RealtimeService Realtime
+@inject NavigationManager Nav
+@inject ToastService Toast
+@inject ApiClient Api
+
+<PageTitle>Kết nối – RoommateFinder</PageTitle>
+
+<div class="container py-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <h1 class="h4 mb-0">Yêu cầu kết nối</h1>
+        <div class="d-flex align-items-center gap-2">
+            <label class="small text-secondary text-nowrap" for="statusFilter">Trạng thái</label>
+            <select id="statusFilter" class="form-select form-select-sm" style="min-width:150px" value="@(Status ?? "")" @onchange="OnStatusChanged">
+                <option value="">Tất cả</option>
+                @foreach (var s in RequestStatus.All)
+                {
+                    <option value="@s">@Labels.RequestStatus(s)</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <button class="nav-link @(IsIncoming ? "active" : "")" @onclick="@(() => GoTab("incoming"))">
+                <i class="bi bi-inbox me-1"></i>Yêu cầu đến
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(!IsIncoming ? "active" : "")" @onclick="@(() => GoTab("outgoing"))">
+                <i class="bi bi-send me-1"></i>Yêu cầu đã gửi
+            </button>
+        </li>
+    </ul>
+
+    @if (_error != null)
+    {
+        <ErrorAlert Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_items == null)
+    {
+        <Loading />
+    }
+    else if (_items.Count == 0)
+    {
+        <EmptyState Icon="bi-people" Text="@(IsIncoming ? "Chưa có yêu cầu kết nối nào gửi tới bạn." : "Bạn chưa gửi yêu cầu kết nối nào.")">
+            @if (!IsIncoming)
+            {
+                <a href="/search" class="btn btn-primary btn-sm mt-3">Tìm phòng ngay</a>
+            }
+        </EmptyState>
+    }
+    else
+    {
+        <div class="d-flex flex-column gap-3">
+            @foreach (var r in _items)
+            {
+                var otherId = IsIncoming ? r.SenderId : r.ReceiverId;
+                var otherName = IsIncoming ? r.SenderName : r.ReceiverName;
+                var otherAvatar = IsIncoming ? r.SenderAvatarUrl : r.ReceiverAvatarUrl;
+                <div class="card shadow-sm border-0" @key="r.RequestId">
+                    <div class="card-body">
+                        <div class="row g-3">
+                            @* Tin đăng *@
+                            <div class="col-12 col-md-5 d-flex gap-3">
+                                <a href="/posts/@r.PostId" class="flex-shrink-0">
+                                    @if (!string.IsNullOrEmpty(r.PostThumbnailUrl))
+                                    {
+                                        <img src="@Api.Url(r.PostThumbnailUrl)" alt="@r.PostTitle" class="rounded object-fit-cover" style="width:88px;height:66px" loading="lazy" />
+                                    }
+                                    else
+                                    {
+                                        <div class="rounded bg-light text-secondary d-flex align-items-center justify-content-center" style="width:88px;height:66px">
+                                            <i class="bi @(r.PostType == PostType.HasRoom ? "bi-house-door" : "bi-person-badge") fs-3"></i>
+                                        </div>
+                                    }
+                                </a>
+                                <div style="min-width:0">
+                                    <a href="/posts/@r.PostId" class="text-decoration-none text-body fw-semibold text-truncate-2">@r.PostTitle</a>
+                                    <div class="small mt-1 d-flex flex-wrap gap-1">
+                                        <Badge Text="@Labels.PostTypeShort(r.PostType)" Color="@(r.PostType == PostType.HasRoom ? "primary" : "info")" />
+                                        @if (r.PostStatus != PostStatus.Approved)
+                                        {
+                                            <Badge Text="@Labels.PostStatus(r.PostStatus)" Color="@Labels.PostStatusColor(r.PostStatus)" />
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+
+                            @* Người còn lại + lời nhắn *@
+                            <div class="col-12 col-md-7">
+                                <div class="d-flex align-items-start gap-2">
+                                    <a href="/users/@otherId"><UserAvatar Name="@otherName" Url="@otherAvatar" Size="40" /></a>
+                                    <div class="flex-grow-1" style="min-width:0">
+                                        <div class="d-flex flex-wrap align-items-center gap-2">
+                                            <span class="small text-secondary">@(IsIncoming ? "Người gửi:" : "Chủ tin:")</span>
+                                            <a href="/users/@otherId" class="fw-semibold text-decoration-none">@otherName</a>
+                                            @if (IsIncoming)
+                                            {
+                                                @if (r.SenderReviewCount > 0)
+                                                {
+                                                    <span class="small"><Stars Value="r.SenderRating" Count="r.SenderReviewCount" /></span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="small text-secondary">Chưa có đánh giá</span>
+                                                }
+                                            }
+                                            <Badge Text="@Labels.RequestStatus(r.Status)" Color="@Labels.RequestStatusColor(r.Status)" Class="ms-auto" />
+                                        </div>
+                                        @if (!string.IsNullOrWhiteSpace(r.Message))
+                                        {
+                                            <div class="bg-light rounded p-2 mt-2 small" style="white-space:pre-wrap">@r.Message</div>
+                                        }
+                                        <div class="small text-secondary mt-2">
+                                            Gửi lúc @Fmt.DateAndTime(r.CreatedAt)
+                                            @if (r.RespondedAt != null)
+                                            {
+                                                <span> · Phản hồi lúc @Fmt.DateAndTime(r.RespondedAt)</span>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+
+                                @* Thao tác *@
+                                <div class="d-flex flex-wrap align-items-center justify-content-end gap-2 mt-3">
+                                    @if (r.Status == RequestStatus.Pending)
+                                    {
+                                        if (IsIncoming)
+                                        {
+                                            <button class="btn btn-outline-danger btn-sm" @onclick="() => Ask(r, ActionKind.Reject)" disabled="@_busy"><i class="bi bi-x-lg me-1"></i>Từ chối</button>
+                                            <button class="btn btn-success btn-sm" @onclick="() => Ask(r, ActionKind.Accept)" disabled="@_busy"><i class="bi bi-check-lg me-1"></i>Chấp nhận</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => Ask(r, ActionKind.Cancel)" disabled="@_busy"><i class="bi bi-arrow-counterclockwise me-1"></i>Rút lại</button>
+                                        }
+                                    }
+                                    else if (r.Status == RequestStatus.Accepted)
+                                    {
+                                        if (r.CanReview)
+                                        {
+                                            <button class="btn btn-outline-warning btn-sm" @onclick="() => OpenReview(r, otherName)"><i class="bi bi-star me-1"></i>Đánh giá</button>
+                                        }
+                                        else if (r.HasReviewed)
+                                        {
+                                            <Badge Text="Đã đánh giá" Color="success" />
+                                        }
+                                        else if (r.ReviewAvailableAt != null)
+                                        {
+                                            <span class="small text-secondary"><i class="bi bi-clock me-1"></i>Có thể đánh giá từ @Fmt.Date(r.ReviewAvailableAt)</span>
+                                        }
+                                        @if (r.ConversationId is { } cid)
+                                        {
+                                            <a class="btn btn-primary btn-sm" href="/chat/@cid"><i class="bi bi-chat-dots me-1"></i>Nhắn tin</a>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<Modal Show="_confirm != null" Title="@ConfirmTitle" OnClose="CloseConfirm" CloseOnBackdrop="!_busy">
+    <ChildContent>
+        @if (_confirm is { } c)
+        {
+            <p class="mb-0">@ConfirmText(c.Kind, c.Request)</p>
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-outline-secondary" @onclick="CloseConfirm" disabled="@_busy">Đóng</button>
+        <button class="btn @ConfirmButtonClass" @onclick="ConfirmAsync" disabled="@_busy">
+            @if (_busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+            @ConfirmButtonText
+        </button>
+    </Footer>
+</Modal>
+
+<ReviewModal Show="_reviewFor != null" RequestId="@(_reviewFor?.RequestId ?? 0)" RevieweeName="@_reviewName"
+             OnClose="() => _reviewFor = null" OnSaved="OnReviewSaved" />
+
+@code {
+    [SupplyParameterFromQuery] public string? Tab { get; set; }
+    [SupplyParameterFromQuery] public string? Status { get; set; }
+
+    private enum ActionKind { Accept, Reject, Cancel }
+    private record PendingAction(ActionKind Kind, ConnectionRequestDto Request);
+
+    private List<ConnectionRequestDto>? _items;
+    private string? _error;
+    private bool _busy;
+    private int _loadVersion;
+    private PendingAction? _confirm;
+    private ConnectionRequestDto? _reviewFor;
+    private string _reviewName = "";
+
+    private bool IsIncoming => Tab != "outgoing";
+    private string? StatusFilter => !string.IsNullOrEmpty(Status) && RequestStatus.All.Contains(Status) ? Status : null;
+
+    protected override void OnInitialized() => Realtime.NotificationReceived += OnNotification;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _items = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var version = ++_loadVersion;
+        _error = null;
+        try
+        {
+            var list = IsIncoming
+                ? await ConnectionsApi.IncomingAsync(StatusFilter)
+                : await ConnectionsApi.OutgoingAsync(StatusFilter);
+            if (version == _loadVersion) _items = list;
+        }
+        catch (ApiException ex)
+        {
+            if (version == _loadVersion) _error = ex.Message;
+        }
+    }
+
+    private void GoTab(string tab)
+    {
+        if ((tab == "outgoing") == !IsIncoming) return;
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["tab"] = tab }));
+    }
+
+    private void OnStatusChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["status"] = string.IsNullOrEmpty(value) ? null : value }));
+    }
+
+    private void Ask(ConnectionRequestDto r, ActionKind kind) => _confirm = new PendingAction(kind, r);
+
+    private void CloseConfirm()
+    {
+        if (!_busy) _confirm = null;
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_confirm is not { } c) return;
+        _busy = true;
+        try
+        {
+            switch (c.Kind)
+            {
+                case ActionKind.Accept:
+                    await ConnectionsApi.AcceptAsync(c.Request.RequestId);
+                    Toast.Success("Đã chấp nhận yêu cầu. Bạn có thể nhắn tin với người gửi.");
+                    break;
+                case ActionKind.Reject:
+                    await ConnectionsApi.RejectAsync(c.Request.RequestId);
+                    Toast.Success("Đã từ chối yêu cầu.");
+                    break;
+                case ActionKind.Cancel:
+                    await ConnectionsApi.CancelAsync(c.Request.RequestId);
+                    Toast.Success("Đã rút lại yêu cầu.");
+                    break;
+            }
+            _confirm = null;
+            await LoadAsync();
+        }
+        catch (ApiException ex)
+        {
+            // 409: tin đã đủ người / yêu cầu không còn chờ → báo và tải lại để thấy trạng thái mới.
+            Toast.Error(ex);
+            _confirm = null;
+            if (ex.IsConflict || ex.IsNotFound) await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void OpenReview(ConnectionRequestDto r, string otherName)
+    {
+        _reviewName = otherName;
+        _reviewFor = r;
+    }
+
+    private async Task OnReviewSaved(ReviewDto _)
+    {
+        _reviewFor = null;
+        await LoadAsync();
+    }
+
+    private void OnNotification(NotificationDto n)
+    {
+        if (!n.Type.StartsWith("request_", StringComparison.Ordinal)) return;
+        InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            StateHasChanged();
+        });
+    }
+
+    private string ConfirmTitle => _confirm?.Kind switch
+    {
+        ActionKind.Accept => "Chấp nhận yêu cầu",
+        ActionKind.Reject => "Từ chối yêu cầu",
+        ActionKind.Cancel => "Rút lại yêu cầu",
+        _ => "",
+    };
+
+    private static string ConfirmText(ActionKind kind, ConnectionRequestDto r) => kind switch
+    {
+        ActionKind.Accept => $"Chấp nhận yêu cầu của {r.SenderName} cho tin \"{r.PostTitle}\"? Hai bạn sẽ có thể nhắn tin với nhau.",
+        ActionKind.Reject => $"Từ chối yêu cầu của {r.SenderName} cho tin \"{r.PostTitle}\"? Thao tác này không thể hoàn tác.",
+        _ => $"Rút lại yêu cầu đã gửi tới tin \"{r.PostTitle}\"?",
+    };
+
+    private string ConfirmButtonClass => _confirm?.Kind switch
+    {
+        ActionKind.Accept => "btn-success",
+        ActionKind.Reject => "btn-danger",
+        _ => "btn-warning",
+    };
+
+    private string ConfirmButtonText => _confirm?.Kind switch
+    {
+        ActionKind.Accept => "Chấp nhận",
+        ActionKind.Reject => "Từ chối",
+        _ => "Rút lại",
+    };
+
+    public void Dispose() => Realtime.NotificationReceived -= OnNotification;
+}

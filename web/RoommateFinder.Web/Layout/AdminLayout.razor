@@ -1,0 +1,15 @@
+@inherits LayoutComponentBase
+@layout MainLayout
+
+@* Khu quản trị: trang dùng @layout AdminLayout và [Authorize(Roles = Roles.Admin)] *@
+<ConsoleShell Title="Quản trị" Items="Items">@Body</ConsoleShell>
+
+@code {
+    private static readonly ConsoleShell.NavItem[] Items =
+    {
+        new("/admin/dashboard", "Thống kê", "bi-bar-chart"),
+        new("/admin/users", "Người dùng", "bi-people"),
+        new("/admin/catalog", "Danh mục", "bi-grid"),
+        new("/admin/configs", "Cấu hình", "bi-gear"),
+    };
+}

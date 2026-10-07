@@ -1,0 +1,8 @@
+<span class="badge text-bg-@Color @Class">@Text</span>
+
+@code {
+    [Parameter] public string Text { get; set; } = "";
+    /// <summary>Màu Bootstrap: primary, success, warning, danger, secondary, dark, info.</summary>
+    [Parameter] public string Color { get; set; } = "secondary";
+    [Parameter] public string? Class { get; set; }
+}

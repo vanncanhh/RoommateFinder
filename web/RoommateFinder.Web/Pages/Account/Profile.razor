@@ -1,0 +1,449 @@
+@page "/profile"
+@attribute [Authorize]
+@using System.ComponentModel.DataAnnotations
+@inject ProfileApi ProfileApi
+@inject CatalogApi CatalogApi
+@inject AuthApi AuthApi
+@inject AuthSession Session
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>Hồ sơ của tôi – RoommateFinder</PageTitle>
+
+<div class="container py-4">
+    <h1 class="h4 mb-3">Hồ sơ của tôi</h1>
+
+    @if (_loadError != null)
+    {
+        <ErrorAlert Message="@_loadError" OnRetry="LoadAsync" />
+    }
+    else if (_profile == null)
+    {
+        <Loading />
+    }
+    else
+    {
+        <div class="row g-3">
+            @* Cột trái: ảnh đại diện + thông tin tài khoản *@
+            <div class="col-12 col-lg-4">
+                <div class="card shadow-sm border-0">
+                    <div class="card-body text-center p-4">
+                        <div class="d-flex justify-content-center mb-3">
+                            <UserAvatar Name="@_profile.FullName" Url="@_profile.AvatarUrl" Size="112" />
+                        </div>
+                        <h2 class="h5 mb-1 text-break">@_profile.FullName</h2>
+                        <div class="text-secondary small text-break mb-2">@_profile.Email</div>
+                        <div class="mb-2"><Badge Text="@Labels.Role(_profile.Role)" Color="@(_profile.Role == Roles.User ? "secondary" : "primary")" /></div>
+                        <div class="mb-3">
+                            @if (_profile.ReviewCount > 0)
+                            {
+                                <Stars Value="_profile.AvgRating" Count="_profile.ReviewCount" />
+                            }
+                            else
+                            {
+                                <span class="small text-secondary">Chưa có đánh giá</span>
+                            }
+                        </div>
+
+                        <label class="btn btn-outline-primary btn-sm @(_uploading ? "disabled" : "")" for="avatarFile">
+                            @if (_uploading)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-camera me-1"></i>
+                            }
+                            Đổi ảnh đại diện
+                        </label>
+                        <InputFile id="avatarFile" class="d-none" accept="image/jpeg,image/png,image/webp" OnChange="UploadAvatarAsync" disabled="@_uploading" />
+                        <div class="form-text">JPG, PNG hoặc WEBP, tối đa 5 MB.</div>
+
+                        <hr />
+                        <a href="/users/@_profile.UserId" class="small"><i class="bi bi-box-arrow-up-right me-1"></i>Xem hồ sơ công khai</a>
+                        <div class="small text-secondary mt-2">Tham gia từ @Fmt.Date(_profile.CreatedAt)</div>
+                    </div>
+                </div>
+            </div>
+
+            @* Cột phải: sửa hồ sơ + đổi mật khẩu *@
+            <div class="col-12 col-lg-8">
+                <div class="card shadow-sm border-0 mb-3">
+                    <div class="card-body p-4">
+                        <h2 class="h5 mb-3">Thông tin cá nhân</h2>
+                        <ErrorAlert Message="@_profileError" />
+
+                        <EditForm Model="_form" OnValidSubmit="SaveProfileAsync" FormName="profile">
+                            <DataAnnotationsValidator />
+                            <div class="row g-3">
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label" for="fullName">Họ và tên</label>
+                                    <InputText id="fullName" class="form-control" @bind-Value="_form.FullName" />
+                                    <ValidationMessage For="() => _form.FullName" />
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label" for="email">Email</label>
+                                    <input id="email" class="form-control" value="@_profile.Email" readonly disabled />
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label" for="phone">Số điện thoại</label>
+                                    <InputText id="phone" type="tel" class="form-control" @bind-Value="_form.Phone" placeholder="0912345678" />
+                                    <ValidationMessage For="() => _form.Phone" />
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label" for="gender">Giới tính</label>
+                                    <InputSelect id="gender" class="form-select" @bind-Value="_form.Gender">
+                                        <option value="">-- Không trả lời --</option>
+                                        @foreach (var g in Gender.UserValues)
+                                        {
+                                            <option value="@g">@Labels.Gender(g)</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label" for="dob">Ngày sinh</label>
+                                    <InputDate id="dob" class="form-control" @bind-Value="_form.DateOfBirth" />
+                                    <ValidationMessage For="() => _form.DateOfBirth" />
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label" for="occupation">Nghề nghiệp</label>
+                                    <InputSelect id="occupation" class="form-select" @bind-Value="_form.Occupation">
+                                        <option value="">-- Không trả lời --</option>
+                                        @foreach (var o in Occupation.All)
+                                        {
+                                            <option value="@o">@Labels.Occupation(o)</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label" for="school">Trường học / Công ty</label>
+                                    <InputText id="school" class="form-control" @bind-Value="_form.SchoolOrCompany" />
+                                    <ValidationMessage For="() => _form.SchoolOrCompany" />
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label" for="landmark">Địa điểm học tập / làm việc</label>
+                                    <InputSelect id="landmark" class="form-select" @bind-Value="_form.LandmarkId">
+                                        <option value="">-- Không chọn --</option>
+                                        @foreach (var l in _landmarks)
+                                        {
+                                            <option value="@l.LandmarkId">@l.Name (@l.AreaName)</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label" for="bio">Giới thiệu bản thân</label>
+                                    <InputTextArea id="bio" class="form-control" rows="4" @bind-Value="_form.Bio" maxlength="500" placeholder="Vài dòng về bạn, thói quen sinh hoạt, mong muốn với bạn ở ghép…" />
+                                    <div class="form-text text-end">@(_form.Bio?.Length ?? 0)/500</div>
+                                    <ValidationMessage For="() => _form.Bio" />
+                                </div>
+
+                                <div class="col-12"><h3 class="h6 mb-0 mt-2">Lối sống</h3></div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label" for="sleep">Giờ giấc sinh hoạt</label>
+                                    <InputSelect id="sleep" class="form-select" @bind-Value="_form.SleepSchedule">
+                                        <option value="">-- Không trả lời --</option>
+                                        @foreach (var s in SleepSchedule.All)
+                                        {
+                                            <option value="@s">@Labels.SleepSchedule(s)</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label" for="clean">Mức độ gọn gàng (1–5)</label>
+                                    <InputSelect id="clean" class="form-select" @bind-Value="_form.CleanlinessLevel">
+                                        <option value="">-- Không trả lời --</option>
+                                        @for (var i = 1; i <= 5; i++)
+                                        {
+                                            var level = i;
+                                            <option value="@level">@level – @CleanLabel(level)</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label" for="smoker">Hút thuốc</label>
+                                    <InputSelect id="smoker" class="form-select" @bind-Value="_form.IsSmoker">
+                                        <option value="">-- Không trả lời --</option>
+                                        <option value="true">Có</option>
+                                        <option value="false">Không</option>
+                                    </InputSelect>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label" for="pet">Nuôi thú cưng</label>
+                                    <InputSelect id="pet" class="form-select" @bind-Value="_form.HasPet">
+                                        <option value="">-- Không trả lời --</option>
+                                        <option value="true">Có</option>
+                                        <option value="false">Không</option>
+                                    </InputSelect>
+                                </div>
+                                <div class="col-12 text-end">
+                                    <button type="submit" class="btn btn-primary" disabled="@_saving">
+                                        @if (_saving) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                                        Lưu thay đổi
+                                    </button>
+                                </div>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm border-0">
+                    <div class="card-body p-4">
+                        <h2 class="h5 mb-1">Đổi mật khẩu</h2>
+                        <p class="small text-secondary mb-3">Sau khi đổi mật khẩu, bạn cần đăng nhập lại; các phiên đăng nhập khác sẽ bị đăng xuất.</p>
+                        <ErrorAlert Message="@_passwordError" />
+
+                        <EditForm Model="_pw" OnValidSubmit="ChangePasswordAsync" FormName="change-password">
+                            <DataAnnotationsValidator />
+                            <div class="row g-3">
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label" for="currentPw">Mật khẩu hiện tại</label>
+                                    <InputText id="currentPw" type="password" class="form-control" @bind-Value="_pw.Current" autocomplete="current-password" />
+                                    <ValidationMessage For="() => _pw.Current" />
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label" for="newPw">Mật khẩu mới</label>
+                                    <InputText id="newPw" type="password" class="form-control" @bind-Value="_pw.New" autocomplete="new-password" />
+                                    <ValidationMessage For="() => _pw.New" />
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label" for="confirmPw">Nhập lại mật khẩu mới</label>
+                                    <InputText id="confirmPw" type="password" class="form-control" @bind-Value="_pw.Confirm" autocomplete="new-password" />
+                                    <ValidationMessage For="() => _pw.Confirm" />
+                                </div>
+                                <div class="col-12 form-text mt-1">@PasswordPolicy.Message</div>
+                                <div class="col-12 text-end">
+                                    <button type="submit" class="btn btn-outline-primary" disabled="@_changingPw">
+                                        @if (_changingPw) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                                        Đổi mật khẩu
+                                    </button>
+                                </div>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private const long MaxAvatarBytes = 5 * 1024 * 1024;
+    private static readonly string[] AvatarTypes = { "image/jpeg", "image/png", "image/webp" };
+
+    /// <summary>Khớp PasswordPolicy.IsStrong ở backend: 8–100 ký tự, có chữ hoa, chữ thường, chữ số.</summary>
+    private const string StrongPassword = @"^(?=.*\p{Lu})(?=.*\p{Ll})(?=.*\d).{8,100}$";
+
+    private ProfileDto? _profile;
+    private List<LandmarkDto> _landmarks = new();
+    private string? _loadError;
+
+    private ProfileForm _form = new();
+    private bool _saving;
+    private string? _profileError;
+
+    private bool _uploading;
+
+    private PasswordForm _pw = new();
+    private bool _changingPw;
+    private string? _passwordError;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+        _profile = null;
+        try
+        {
+            var profileTask = ProfileApi.GetAsync();
+            var landmarksTask = CatalogApi.LandmarksAsync();
+            await Task.WhenAll(profileTask, landmarksTask);
+            _landmarks = landmarksTask.Result.Where(l => l.IsActive).OrderBy(l => l.AreaName).ThenBy(l => l.Name).ToList();
+            SetProfile(profileTask.Result);
+        }
+        catch (ApiException ex)
+        {
+            _loadError = ex.Message;
+        }
+    }
+
+    private void SetProfile(ProfileDto p)
+    {
+        _profile = p;
+        _form = new ProfileForm
+        {
+            FullName = p.FullName,
+            Phone = p.Phone,
+            Gender = p.Gender ?? "",
+            DateOfBirth = p.DateOfBirth,
+            Occupation = p.Occupation ?? "",
+            SchoolOrCompany = p.SchoolOrCompany,
+            LandmarkId = p.LandmarkId?.ToString() ?? "",
+            Bio = p.Bio,
+            SleepSchedule = p.SleepSchedule ?? "",
+            IsSmoker = TriToString(p.IsSmoker),
+            HasPet = TriToString(p.HasPet),
+            CleanlinessLevel = p.CleanlinessLevel?.ToString() ?? "",
+        };
+        // Địa điểm mốc đã chọn nhưng nay bị ẩn: vẫn hiện trong danh sách để không mất lựa chọn.
+        if (p.LandmarkId is { } id && _landmarks.All(l => l.LandmarkId != id))
+            _landmarks.Insert(0, new LandmarkDto { LandmarkId = id, Name = p.LandmarkName ?? $"#{id}", AreaName = "" });
+    }
+
+    private async Task UploadAvatarAsync(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (!AvatarTypes.Contains(file.ContentType))
+        {
+            Toast.Error("Chỉ chấp nhận ảnh JPG, PNG hoặc WEBP.");
+            return;
+        }
+        if (file.Size > MaxAvatarBytes)
+        {
+            Toast.Error("Ảnh đại diện phải nhỏ hơn 5 MB.");
+            return;
+        }
+        _uploading = true;
+        try
+        {
+            var updated = await ProfileApi.UploadAvatarAsync(file, MaxAvatarBytes);
+            _profile = updated;
+            await Session.RefreshUserAsync();
+            Toast.Success("Đã cập nhật ảnh đại diện.");
+        }
+        catch (ApiException ex)
+        {
+            Toast.Error(ex);
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    private async Task SaveProfileAsync()
+    {
+        _profileError = null;
+        if (_form.DateOfBirth is { } dob)
+        {
+            var today = DateOnly.FromDateTime(Fmt.VnNow);
+            if (dob > today.AddYears(-16) || dob < today.AddYears(-100))
+            {
+                _profileError = "Ngày sinh không hợp lệ (người dùng phải từ 16 tuổi).";
+                return;
+            }
+        }
+
+        _saving = true;
+        try
+        {
+            var req = new UpdateProfileRequest
+            {
+                FullName = _form.FullName.Trim(),
+                Phone = NullIfEmpty(_form.Phone),
+                Gender = NullIfEmpty(_form.Gender),
+                DateOfBirth = _form.DateOfBirth,
+                Occupation = NullIfEmpty(_form.Occupation),
+                SchoolOrCompany = NullIfEmpty(_form.SchoolOrCompany),
+                LandmarkId = int.TryParse(_form.LandmarkId, out var lm) ? lm : null,
+                Bio = NullIfEmpty(_form.Bio),
+                SleepSchedule = NullIfEmpty(_form.SleepSchedule),
+                IsSmoker = StringToTri(_form.IsSmoker),
+                HasPet = StringToTri(_form.HasPet),
+                CleanlinessLevel = byte.TryParse(_form.CleanlinessLevel, out var c) ? c : null,
+            };
+            var updated = await ProfileApi.UpdateAsync(req);
+            SetProfile(updated);
+            await Session.RefreshUserAsync();
+            Toast.Success("Đã lưu hồ sơ.");
+        }
+        catch (ApiException ex)
+        {
+            _profileError = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        _passwordError = null;
+        if (_pw.Current == _pw.New)
+        {
+            _passwordError = "Mật khẩu mới phải khác mật khẩu hiện tại.";
+            return;
+        }
+        _changingPw = true;
+        try
+        {
+            var res = await AuthApi.ChangePasswordAsync(new ChangePasswordRequest { CurrentPassword = _pw.Current, NewPassword = _pw.New });
+            Toast.Success(string.IsNullOrWhiteSpace(res.Message) ? "Đổi mật khẩu thành công. Vui lòng đăng nhập lại." : res.Message);
+            await Session.LogoutAsync();
+            Nav.NavigateTo("/login");
+        }
+        catch (ApiException ex)
+        {
+            _passwordError = ex.Message; // sai mật khẩu hiện tại, mật khẩu yếu...
+        }
+        finally
+        {
+            _changingPw = false;
+        }
+    }
+
+    private static string? NullIfEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+    private static string TriToString(bool? v) => v switch { true => "true", false => "false", null => "" };
+    private static bool? StringToTri(string? s) => s switch { "true" => true, "false" => false, _ => null };
+
+    private static string CleanLabel(int level) => level switch
+    {
+        1 => "Khá bừa bộn",
+        2 => "Thoải mái",
+        3 => "Bình thường",
+        4 => "Gọn gàng",
+        _ => "Rất gọn gàng",
+    };
+
+    private class ProfileForm
+    {
+        [Required(ErrorMessage = "Vui lòng nhập họ tên")]
+        [StringLength(100, MinimumLength = 2, ErrorMessage = "Họ tên phải từ 2 đến 100 ký tự")]
+        public string FullName { get; set; } = "";
+
+        [RegularExpression(@"^\s*0\d{9,10}\s*$", ErrorMessage = "Số điện thoại không hợp lệ (10–11 chữ số, bắt đầu bằng 0)")]
+        public string? Phone { get; set; }
+
+        public string Gender { get; set; } = "";
+        public DateOnly? DateOfBirth { get; set; }
+        public string Occupation { get; set; } = "";
+
+        [StringLength(150, ErrorMessage = "Trường/công ty tối đa 150 ký tự")]
+        public string? SchoolOrCompany { get; set; }
+
+        public string LandmarkId { get; set; } = "";
+
+        [StringLength(500, ErrorMessage = "Giới thiệu tối đa 500 ký tự")]
+        public string? Bio { get; set; }
+
+        public string SleepSchedule { get; set; } = "";
+        public string IsSmoker { get; set; } = "";
+        public string HasPet { get; set; } = "";
+        public string CleanlinessLevel { get; set; } = "";
+    }
+
+    private class PasswordForm
+    {
+        [Required(ErrorMessage = "Vui lòng nhập mật khẩu hiện tại")]
+        public string Current { get; set; } = "";
+
+        [Required(ErrorMessage = "Vui lòng nhập mật khẩu mới")]
+        [RegularExpression(StrongPassword, ErrorMessage = PasswordPolicy.Message)]
+        public string New { get; set; } = "";
+
+        [Required(ErrorMessage = "Vui lòng nhập lại mật khẩu mới")]
+        [Compare(nameof(New), ErrorMessage = "Mật khẩu nhập lại không khớp")]
+        public string Confirm { get; set; } = "";
+    }
+}

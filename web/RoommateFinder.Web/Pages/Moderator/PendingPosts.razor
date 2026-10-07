@@ -1,0 +1,427 @@
+@page "/moderator/posts"
+@layout ModeratorLayout
+@attribute [Authorize(Roles = Roles.ModeratorOrAdmin)]
+@inject ModerationApi ModerationApi
+@inject PostsApi PostsApi
+@inject ApiClient Api
+@inject AuthSession Session
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>Duyệt tin – RoommateFinder</PageTitle>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <h1 class="h4 mb-0"><i class="bi bi-clipboard-check me-2"></i>Duyệt tin đăng</h1>
+    <div class="d-flex align-items-center gap-2">
+        <label class="small text-secondary text-nowrap" for="statusFilter">Trạng thái</label>
+        <select id="statusFilter" class="form-select form-select-sm" value="@CurrentStatus" @onchange="OnStatusChanged">
+            @foreach (var s in PostStatus.All)
+            {
+                <option value="@s">@Labels.PostStatus(s)</option>
+            }
+        </select>
+    </div>
+</div>
+
+@if (CurrentStatus == PostStatus.Pending)
+{
+    <p class="small text-secondary">Hàng đợi sắp xếp theo thời gian gửi — tin gửi sớm nhất ở trên cùng. Bạn không được duyệt tin của chính mình.</p>
+}
+
+@if (_loading && _data == null)
+{
+    <Loading />
+}
+else if (_error != null)
+{
+    <ErrorAlert Message="@_error" OnRetry="LoadAsync" />
+}
+else if (_data == null || _data.Items.Count == 0)
+{
+    <EmptyState Icon="bi-clipboard-check" Text="@(CurrentStatus == PostStatus.Pending ? "Không có tin nào đang chờ duyệt." : "Không có tin nào.")" />
+}
+else
+{
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:72px">Ảnh</th>
+                        <th>Tiêu đề</th>
+                        <th>Loại</th>
+                        <th>Khu vực</th>
+                        <th class="text-end">Giá</th>
+                        <th>Người đăng</th>
+                        <th>Ngày gửi</th>
+                        <th class="text-end">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in _data.Items)
+                    {
+                        var own = p.OwnerId == Session.UserId;
+                        <tr>
+                            <td>
+                                @if (!string.IsNullOrEmpty(p.ThumbnailUrl))
+                                {
+                                    <img src="@Api.Url(p.ThumbnailUrl)" alt="" class="rounded" style="width:64px;height:48px;object-fit:cover" loading="lazy" />
+                                }
+                                else
+                                {
+                                    <div class="rounded bg-light text-secondary d-flex align-items-center justify-content-center" style="width:64px;height:48px"><i class="bi bi-image"></i></div>
+                                }
+                            </td>
+                            <td style="min-width:180px">
+                                <div class="fw-semibold">@p.Title</div>
+                                @if (CurrentStatus != PostStatus.Pending)
+                                {
+                                    <Badge Text="@Labels.PostStatus(p.Status)" Color="@Labels.PostStatusColor(p.Status)" />
+                                }
+                                @if (!string.IsNullOrEmpty(p.RejectReason) && p.Status is PostStatus.Rejected or PostStatus.Hidden)
+                                {
+                                    <div class="small text-danger">Lý do: @p.RejectReason</div>
+                                }
+                            </td>
+                            <td class="text-nowrap">@Labels.PostTypeShort(p.PostType)</td>
+                            <td>@p.AreaName<span class="text-secondary">@(string.IsNullOrEmpty(p.District) ? "" : $", {p.District}")</span></td>
+                            <td class="text-end text-nowrap">@Fmt.MoneyShort(p.Price)</td>
+                            <td><a href="/users/@p.OwnerId">@p.OwnerName</a></td>
+                            <td class="text-nowrap small">@Fmt.DateAndTime(p.CreatedAt)</td>
+                            <td class="text-end text-nowrap">
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenDetailAsync(p.PostId)">
+                                    <i class="bi bi-eye"></i> Xem
+                                </button>
+                                @if (p.Status == PostStatus.Pending)
+                                {
+                                    if (own)
+                                    {
+                                        <span class="d-inline-block" tabindex="0" title="Không được duyệt tin của chính mình">
+                                            <button class="btn btn-sm btn-success" disabled><i class="bi bi-check-lg"></i> Duyệt</button>
+                                        </span>
+                                        <span class="d-inline-block" tabindex="0" title="Không được duyệt tin của chính mình">
+                                            <button class="btn btn-sm btn-outline-danger" disabled><i class="bi bi-x-lg"></i> Từ chối</button>
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-sm btn-success" @onclick="() => AskApprove(p.PostId, p.Title)"><i class="bi bi-check-lg"></i> Duyệt</button>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => AskReject(p.PostId, p.Title)"><i class="bi bi-x-lg"></i> Từ chối</button>
+                                    }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="small text-secondary mt-2">Tổng cộng @_data.TotalCount tin.</div>
+    <Pager Page="CurrentPage" TotalPages="_data.TotalPages" PageChanged="GoToPage" />
+}
+
+@* Chi tiết tin *@
+<Modal Show="_detailOpen" Title="Chi tiết tin đăng" SizeClass="modal-lg" OnClose="CloseDetail">
+    <ChildContent>
+        @if (_detailLoading)
+        {
+            <Loading />
+        }
+        else if (_detailError != null)
+        {
+            <ErrorAlert Message="@_detailError" />
+        }
+        else if (_detail is { } d)
+        {
+            <div class="mb-2 d-flex flex-wrap gap-2 align-items-center">
+                <Badge Text="@Labels.PostStatus(d.Status)" Color="@Labels.PostStatusColor(d.Status)" />
+                <Badge Text="@Labels.PostType(d.PostType)" Color="info" />
+                <span class="small text-secondary">Gửi lúc @Fmt.DateAndTime(d.CreatedAt)@(d.UpdatedAt is { } u ? $" · sửa lúc {Fmt.DateAndTime(u)}" : "")</span>
+            </div>
+            <h2 class="h5">@d.Title</h2>
+
+            @if (d.Images.Count > 0)
+            {
+                var main = d.Images[Math.Clamp(_imageIndex, 0, d.Images.Count - 1)];
+                <img src="@Api.Url(main.ImageUrl)" alt="" class="img-fluid rounded w-100 mb-2" style="max-height:360px;object-fit:contain;background:#f1f3f5" />
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    @for (var i = 0; i < d.Images.Count; i++)
+                    {
+                        var idx = i;
+                        <img src="@Api.Url(d.Images[idx].ImageUrl)" alt="Ảnh @(idx + 1)" role="button"
+                             class="rounded border @(idx == _imageIndex ? "border-primary border-2" : "")"
+                             style="width:72px;height:54px;object-fit:cover" @onclick="() => _imageIndex = idx" />
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="text-secondary small mb-3"><i class="bi bi-image me-1"></i>Tin không có ảnh.</div>
+            }
+
+            <div class="row g-2 small mb-3">
+                <div class="col-12 col-md-6"><span class="text-secondary">Giá:</span> <strong>@Fmt.Money(d.Price)</strong> <span class="text-secondary">@PostRules.PriceLabel(d.PostType)</span></div>
+                <div class="col-12 col-md-6"><span class="text-secondary">Khu vực:</span> @d.AreaName@(string.IsNullOrEmpty(d.District) ? "" : $", {d.District}"), @d.City</div>
+                <div class="col-12 col-md-6"><span class="text-secondary">Địa chỉ:</span> @(string.IsNullOrEmpty(d.Address) ? "—" : d.Address)</div>
+                <div class="col-12 col-md-6"><span class="text-secondary">Số người:</span> đang có @d.CurrentOccupants, cần thêm @d.NeededOccupants</div>
+                <div class="col-12 col-md-6"><span class="text-secondary">Giới tính mong muốn:</span> @Labels.Gender(d.PreferredGender)</div>
+                @if (d.Latitude != null && d.Longitude != null)
+                {
+                    <div class="col-12 col-md-6"><span class="text-secondary">Tọa độ:</span> @d.Latitude, @d.Longitude</div>
+                }
+            </div>
+
+            <h3 class="h6">Mô tả</h3>
+            <div class="border rounded p-2 mb-3 small" style="white-space:pre-wrap">@(string.IsNullOrWhiteSpace(d.Description) ? "(Không có mô tả)" : d.Description)</div>
+
+            <h3 class="h6">Tiện ích</h3>
+            <div class="mb-3">
+                @if (d.Amenities.Count == 0)
+                {
+                    <span class="small text-secondary">Không có</span>
+                }
+                @foreach (var a in d.Amenities)
+                {
+                    <span class="badge rounded-pill text-bg-light border me-1 mb-1">@a.Name</span>
+                }
+            </div>
+
+            <h3 class="h6">Người đăng</h3>
+            <div class="small">
+                <a href="/users/@d.OwnerId">@d.OwnerName</a>
+                @if (!string.IsNullOrEmpty(d.OwnerGender)) { <span class="text-secondary"> · @Labels.Gender(d.OwnerGender)</span> }
+                @if (!string.IsNullOrEmpty(d.OwnerOccupation)) { <span class="text-secondary"> · @Labels.Occupation(d.OwnerOccupation)</span> }
+                <span class="text-secondary"> · <i class="bi bi-star-fill star"></i> @d.OwnerRating.ToString("0.0") (@d.OwnerReviewCount đánh giá)</span>
+                @if (!string.IsNullOrEmpty(d.OwnerPhone)) { <span class="text-secondary"> · <i class="bi bi-telephone"></i> @d.OwnerPhone</span> }
+            </div>
+
+            @if (!string.IsNullOrEmpty(d.RejectReason))
+            {
+                <div class="alert alert-warning small mt-3 mb-0"><strong>Lý do từ chối/ẩn trước đó:</strong> @d.RejectReason</div>
+            }
+        }
+    </ChildContent>
+    <Footer>
+        @if (_detail is { Status: PostStatus.Pending } dd)
+        {
+            if (dd.OwnerId == Session.UserId)
+            {
+                <span class="small text-secondary me-auto" title="Không được duyệt tin của chính mình"><i class="bi bi-info-circle me-1"></i>Không được duyệt tin của chính mình</span>
+            }
+            else
+            {
+                <button class="btn btn-outline-danger" @onclick="() => AskReject(dd.PostId, dd.Title)"><i class="bi bi-x-lg"></i> Từ chối</button>
+                <button class="btn btn-success" @onclick="() => AskApprove(dd.PostId, dd.Title)"><i class="bi bi-check-lg"></i> Duyệt</button>
+            }
+        }
+        <button class="btn btn-secondary" @onclick="CloseDetail">Đóng</button>
+    </Footer>
+</Modal>
+
+@* Xác nhận duyệt *@
+<Modal Show="_approveTarget != null" Title="Duyệt tin đăng" OnClose="() => _approveTarget = null">
+    <ChildContent>
+        <p class="mb-0">Duyệt và hiển thị công khai tin <strong>@_approveTarget?.Title</strong>?</p>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _approveTarget = null" disabled="@_busy">Hủy</button>
+        <button class="btn btn-success" @onclick="ApproveAsync" disabled="@_busy">
+            @if (_busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+            Duyệt tin
+        </button>
+    </Footer>
+</Modal>
+
+@* Từ chối *@
+<Modal Show="_rejectTarget != null" Title="Từ chối tin đăng" OnClose="() => _rejectTarget = null" CloseOnBackdrop="false">
+    <ChildContent>
+        <p>Từ chối tin <strong>@_rejectTarget?.Title</strong>. Lý do sẽ được gửi cho người đăng.</p>
+        <label class="form-label" for="rejectReason">Lý do từ chối <span class="text-danger">*</span></label>
+        <textarea id="rejectReason" class="form-control @(_rejectError != null ? "is-invalid" : "")" rows="4" maxlength="500"
+                  @bind="_rejectReason" @bind:event="oninput" placeholder="Ví dụ: Ảnh không đúng thực tế, thiếu thông tin giá…"></textarea>
+        <div class="d-flex justify-content-between">
+            <div class="invalid-feedback d-block">@_rejectError</div>
+            <small class="text-secondary text-nowrap">@(_rejectReason.Trim().Length)/500</small>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _rejectTarget = null" disabled="@_busy">Hủy</button>
+        <button class="btn btn-danger" @onclick="RejectAsync" disabled="@_busy">
+            @if (_busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+            Từ chối tin
+        </button>
+    </Footer>
+</Modal>
+
+@code {
+    [SupplyParameterFromQuery] public string? Status { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private record Target(long Id, string Title);
+
+    private PagedResult<PostSummaryDto>? _data;
+    private bool _loading;
+    private string? _error;
+    private string? _loadedKey;
+
+    private bool _detailOpen;
+    private bool _detailLoading;
+    private string? _detailError;
+    private PostDetailDto? _detail;
+    private int _imageIndex;
+
+    private Target? _approveTarget;
+    private Target? _rejectTarget;
+    private string _rejectReason = "";
+    private string? _rejectError;
+    private bool _busy;
+
+    private string CurrentStatus => Status != null && PostStatus.All.Contains(Status) ? Status : PostStatus.Pending;
+    private int CurrentPage => PageNumber is > 0 ? PageNumber.Value : 1;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = $"{CurrentStatus}|{CurrentPage}";
+        if (key == _loadedKey) return;
+        _loadedKey = key;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _data = await ModerationApi.PostsAsync(CurrentStatus, CurrentPage);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+            _data = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    /// <summary>Tải lại sau thao tác; trang hiện tại rỗng (đã duyệt hết) thì lùi về trang cuối còn dữ liệu.</summary>
+    private async Task ReloadAfterActionAsync()
+    {
+        await LoadAsync();
+        if (_data != null && _data.Items.Count == 0 && CurrentPage > 1)
+            Navigate(CurrentStatus, Math.Max(1, _data.TotalPages));
+    }
+
+    private void Navigate(string status, int page) =>
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["status"] = status == PostStatus.Pending ? null : status,
+            ["page"] = page > 1 ? page : null,
+        }));
+
+    private void OnStatusChanged(ChangeEventArgs e) => Navigate(e.Value?.ToString() ?? PostStatus.Pending, 1);
+    private void GoToPage(int page) => Navigate(CurrentStatus, page);
+
+    private async Task OpenDetailAsync(long postId)
+    {
+        _detailOpen = true;
+        _detailLoading = true;
+        _detailError = null;
+        _detail = null;
+        _imageIndex = 0;
+        try
+        {
+            _detail = await PostsApi.GetAsync(postId);
+        }
+        catch (ApiException ex)
+        {
+            _detailError = ex.Message;
+        }
+        finally
+        {
+            _detailLoading = false;
+        }
+    }
+
+    private void CloseDetail()
+    {
+        _detailOpen = false;
+        _detail = null;
+    }
+
+    private void AskApprove(long id, string title) => _approveTarget = new Target(id, title);
+
+    private void AskReject(long id, string title)
+    {
+        _rejectTarget = new Target(id, title);
+        _rejectReason = "";
+        _rejectError = null;
+    }
+
+    private async Task ApproveAsync()
+    {
+        if (_approveTarget is not { } t) return;
+        _busy = true;
+        try
+        {
+            await ModerationApi.ApproveAsync(t.Id);
+            Toast.Success($"Đã duyệt tin \"{t.Title}\".");
+            _approveTarget = null;
+            CloseDetail();
+            await ReloadAfterActionAsync();
+        }
+        catch (ApiException ex)
+        {
+            await HandleActionErrorAsync(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RejectAsync()
+    {
+        if (_rejectTarget is not { } t) return;
+        var reason = _rejectReason.Trim();
+        if (reason.Length is < 5 or > 500)
+        {
+            _rejectError = "Lý do từ chối phải từ 5 đến 500 ký tự.";
+            return;
+        }
+        _rejectError = null;
+        _busy = true;
+        try
+        {
+            await ModerationApi.RejectAsync(t.Id, reason);
+            Toast.Success($"Đã từ chối tin \"{t.Title}\".");
+            _rejectTarget = null;
+            CloseDetail();
+            await ReloadAfterActionAsync();
+        }
+        catch (ApiException ex)
+        {
+            if (ex.IsConflict || ex.IsNotFound) await HandleActionErrorAsync(ex);
+            else _rejectError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>409 (tin vừa bị sửa/đã được người khác duyệt, chủ tin bị khóa) hoặc 404: báo và tải lại danh sách.</summary>
+    private async Task HandleActionErrorAsync(ApiException ex)
+    {
+        Toast.Error(ex);
+        if (ex.IsConflict || ex.IsNotFound)
+        {
+            _approveTarget = null;
+            _rejectTarget = null;
+            CloseDetail();
+            await ReloadAfterActionAsync();
+        }
+    }
+}

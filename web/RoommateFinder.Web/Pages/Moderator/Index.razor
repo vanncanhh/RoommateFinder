@@ -1,0 +1,11 @@
+@page "/moderator"
+@layout ModeratorLayout
+@attribute [Authorize(Roles = Roles.ModeratorOrAdmin)]
+@inject NavigationManager Nav
+
+<PageTitle>Kiểm duyệt – RoommateFinder</PageTitle>
+<Loading />
+
+@code {
+    protected override void OnInitialized() => Nav.NavigateTo("/moderator/posts", replace: true);
+}

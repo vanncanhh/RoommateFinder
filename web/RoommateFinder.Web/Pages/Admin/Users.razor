@@ -1,0 +1,399 @@
+@page "/admin/users"
+@layout AdminLayout
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject AdminApi AdminApi
+@inject AuthSession Session
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>Quản lý người dùng – RoommateFinder</PageTitle>
+
+<h1 class="h4 mb-3"><i class="bi bi-people me-2"></i>Quản lý người dùng</h1>
+
+<form class="row g-2 align-items-end mb-3" @onsubmit="ApplyFilter" @onsubmit:preventDefault="true">
+    <div class="col-12 col-md-5">
+        <label class="form-label small mb-0" for="kw">Từ khóa</label>
+        <input id="kw" class="form-control form-control-sm" @bind="_keywordInput" placeholder="Tên, email hoặc số điện thoại" />
+    </div>
+    <div class="col-6 col-md-2">
+        <label class="form-label small mb-0" for="roleFilter">Vai trò</label>
+        <select id="roleFilter" class="form-select form-select-sm" @bind="_roleInput">
+            <option value="">Tất cả</option>
+            @foreach (var r in Roles.All)
+            {
+                <option value="@r">@Labels.Role(r)</option>
+            }
+        </select>
+    </div>
+    <div class="col-6 col-md-2">
+        <label class="form-label small mb-0" for="statusFilter">Trạng thái</label>
+        <select id="statusFilter" class="form-select form-select-sm" @bind="_statusInput">
+            <option value="">Tất cả</option>
+            @foreach (var s in UserStatus.All)
+            {
+                <option value="@s">@Labels.UserStatus(s)</option>
+            }
+        </select>
+    </div>
+    <div class="col-12 col-md-3 d-flex gap-2">
+        <button type="submit" class="btn btn-sm btn-primary flex-grow-1"><i class="bi bi-search"></i> Tìm</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ClearFilter">Xóa lọc</button>
+    </div>
+</form>
+
+@if (_loading && _data == null)
+{
+    <Loading />
+}
+else if (_error != null)
+{
+    <ErrorAlert Message="@_error" OnRetry="LoadAsync" />
+}
+else if (_data == null || _data.Items.Count == 0)
+{
+    <EmptyState Icon="bi-people" Text="Không tìm thấy người dùng phù hợp." />
+}
+else
+{
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Họ tên</th>
+                        <th>Email</th>
+                        <th>Điện thoại</th>
+                        <th>Vai trò</th>
+                        <th>Trạng thái</th>
+                        <th class="text-center">Đánh giá</th>
+                        <th class="text-center">Tin</th>
+                        <th class="text-center">Vi phạm</th>
+                        <th>Ngày tạo</th>
+                        <th class="text-end">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var u in _data.Items)
+                    {
+                        var own = u.UserId == Session.UserId;
+                        <tr>
+                            <td class="text-nowrap">
+                                <a href="/users/@u.UserId">@u.FullName</a>
+                                @if (own) { <span class="badge text-bg-light border ms-1">Bạn</span> }
+                            </td>
+                            <td class="small">@u.Email</td>
+                            <td class="small text-nowrap">@(u.Phone ?? "—")</td>
+                            <td><Badge Text="@Labels.Role(u.Role)" Color="@RoleColor(u.Role)" /></td>
+                            <td class="text-nowrap">
+                                <Badge Text="@Labels.UserStatus(u.Status)" Color="@Labels.UserStatusColor(u.Status)" />
+                                @if (u.Status == UserStatus.Suspended && u.SuspendedUntil != null)
+                                {
+                                    <div class="small text-secondary">đến @Fmt.DateAndTime(u.SuspendedUntil)</div>
+                                }
+                            </td>
+                            <td class="text-center text-nowrap small">
+                                @if (u.ReviewCount > 0)
+                                {
+                                    <span><i class="bi bi-star-fill star"></i> @u.AvgRating.ToString("0.0") (@u.ReviewCount)</span>
+                                }
+                                else
+                                {
+                                    <span class="text-secondary">—</span>
+                                }
+                            </td>
+                            <td class="text-center">@u.PostCount</td>
+                            <td class="text-center">
+                                @if (u.ViolationCount > 0)
+                                {
+                                    <a href="/moderator/violations?userId=@u.UserId" class="badge text-bg-danger text-decoration-none">@u.ViolationCount</a>
+                                }
+                                else
+                                {
+                                    <span class="text-secondary">0</span>
+                                }
+                            </td>
+                            <td class="small text-nowrap">@Fmt.Date(u.CreatedAt)</td>
+                            <td class="text-end text-nowrap">
+                                @if (!own)
+                                {
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenRole(u)"><i class="bi bi-person-gear"></i> Vai trò</button>
+                                }
+                                @if (own || u.Role == Roles.Admin)
+                                {
+                                    <span class="d-inline-block" tabindex="0" title="@(own ? "Không thể tự khóa tài khoản của mình" : "Hạ vai trò trước khi khóa")">
+                                        <button class="btn btn-sm btn-outline-danger" disabled><i class="bi bi-shield-lock"></i> Trạng thái</button>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => OpenStatus(u)"><i class="bi bi-shield-lock"></i> Trạng thái</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="small text-secondary mt-2">Tổng cộng @_data.TotalCount người dùng.</div>
+    <Pager Page="CurrentPage" TotalPages="_data.TotalPages" PageChanged="p => Navigate(Keyword, Role, Status, p)" />
+}
+
+@* Đổi vai trò *@
+<Modal Show="_roleTarget != null" Title="Đổi vai trò" OnClose="() => _roleTarget = null">
+    <ChildContent>
+        @if (_roleTarget is { } rt)
+        {
+            <p>Người dùng: <strong>@rt.FullName</strong> (@rt.Email) — hiện là <strong>@Labels.Role(rt.Role)</strong>.</p>
+            <label class="form-label" for="newRole">Vai trò mới</label>
+            <select id="newRole" class="form-select" @bind="_newRole">
+                @foreach (var r in Roles.All)
+                {
+                    <option value="@r">@Labels.Role(r)</option>
+                }
+            </select>
+            @if (_newRole != rt.Role)
+            {
+                <div class="alert alert-warning small mt-3 mb-0">
+                    Xác nhận đổi vai trò từ <strong>@Labels.Role(rt.Role)</strong> thành <strong>@Labels.Role(_newRole)</strong>?
+                    Người dùng cần đăng nhập lại để áp dụng.
+                </div>
+            }
+            <ErrorAlert Message="@_modalError" Class="mt-3 mb-0" />
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _roleTarget = null" disabled="@_busy">Hủy</button>
+        <button class="btn btn-primary" @onclick="SaveRoleAsync" disabled="@(_busy || _roleTarget == null || _newRole == _roleTarget.Role)">
+            @if (_busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+            Xác nhận
+        </button>
+    </Footer>
+</Modal>
+
+@* Đổi trạng thái *@
+<Modal Show="_statusTarget != null" Title="Đổi trạng thái tài khoản" OnClose="() => _statusTarget = null" CloseOnBackdrop="false">
+    <ChildContent>
+        @if (_statusTarget is { } st)
+        {
+            <p>Người dùng: <strong>@st.FullName</strong> — hiện <Badge Text="@Labels.UserStatus(st.Status)" Color="@Labels.UserStatusColor(st.Status)" /></p>
+            <div class="mb-3">
+                @foreach (var s in UserStatus.All)
+                {
+                    var status = s;
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="newStatus" id="st-@status" checked="@(_newStatus == status)" @onchange="() => _newStatus = status" />
+                        <label class="form-check-label" for="st-@status">@StatusOptionLabel(status)</label>
+                    </div>
+                }
+            </div>
+            @if (_newStatus == UserStatus.Suspended)
+            {
+                <div class="mb-3">
+                    <label class="form-label" for="days">Số ngày khóa (1–365) <span class="text-danger">*</span></label>
+                    <input id="days" type="number" min="1" max="365" class="form-control" style="max-width:160px" @bind="_suspendDays" />
+                </div>
+            }
+            @if (_newStatus != UserStatus.Active)
+            {
+                <div class="mb-2">
+                    <label class="form-label" for="reason">Lý do <span class="text-danger">*</span></label>
+                    <textarea id="reason" class="form-control" rows="3" maxlength="500" @bind="_reason" @bind:event="oninput"></textarea>
+                    <div class="form-text text-end">@(_reason.Trim().Length)/500</div>
+                </div>
+                @if (_newStatus == UserStatus.Banned)
+                {
+                    <div class="alert alert-danger small py-2 mb-0">
+                        <i class="bi bi-exclamation-octagon-fill me-1"></i>Tài khoản sẽ bị <strong>khóa vĩnh viễn</strong> và không thể đăng nhập.
+                    </div>
+                }
+            }
+            else if (st.Status != UserStatus.Active)
+            {
+                <div class="alert alert-info small py-2 mb-0">Mở khóa tài khoản, người dùng có thể đăng nhập lại ngay.</div>
+            }
+            <ErrorAlert Message="@_modalError" Class="mt-3 mb-0" />
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _statusTarget = null" disabled="@_busy">Hủy</button>
+        <button class="btn @(_newStatus == UserStatus.Active ? "btn-success" : "btn-danger")" @onclick="SaveStatusAsync" disabled="@_busy">
+            @if (_busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+            Xác nhận
+        </button>
+    </Footer>
+</Modal>
+
+@code {
+    [SupplyParameterFromQuery] public string? Keyword { get; set; }
+    [SupplyParameterFromQuery] public string? Role { get; set; }
+    [SupplyParameterFromQuery] public string? Status { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private PagedResult<AdminUserDto>? _data;
+    private bool _loading;
+    private string? _error;
+    private string? _loadedKey;
+
+    private string? _keywordInput;
+    private string _roleInput = "";
+    private string _statusInput = "";
+
+    private AdminUserDto? _roleTarget;
+    private string _newRole = Roles.User;
+    private AdminUserDto? _statusTarget;
+    private string _newStatus = UserStatus.Active;
+    private int? _suspendDays = 7;
+    private string _reason = "";
+    private string? _modalError;
+    private bool _busy;
+
+    private string? CurrentRole => Role != null && Roles.All.Contains(Role) ? Role : null;
+    private string? CurrentStatus => Status != null && UserStatus.All.Contains(Status) ? Status : null;
+    private int CurrentPage => PageNumber is > 0 ? PageNumber.Value : 1;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _keywordInput = Keyword;
+        _roleInput = CurrentRole ?? "";
+        _statusInput = CurrentStatus ?? "";
+        var key = $"{Keyword}|{CurrentRole}|{CurrentStatus}|{CurrentPage}";
+        if (key == _loadedKey) return;
+        _loadedKey = key;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _data = await AdminApi.UsersAsync(new AdminUserQuery
+            {
+                Keyword = string.IsNullOrWhiteSpace(Keyword) ? null : Keyword.Trim(),
+                Role = CurrentRole,
+                Status = CurrentStatus,
+                Page = CurrentPage,
+            });
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+            _data = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void Navigate(string? keyword, string? role, string? status, int page) =>
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["keyword"] = string.IsNullOrWhiteSpace(keyword) ? null : keyword.Trim(),
+            ["role"] = string.IsNullOrEmpty(role) ? null : role,
+            ["status"] = string.IsNullOrEmpty(status) ? null : status,
+            ["page"] = page > 1 ? page : null,
+        }));
+
+    private void ApplyFilter() => Navigate(_keywordInput, _roleInput, _statusInput, 1);
+    private void ClearFilter() => Navigate(null, null, null, 1);
+
+    private static string RoleColor(string role) => role switch
+    {
+        Roles.Admin => "danger",
+        Roles.Moderator => "primary",
+        _ => "secondary",
+    };
+
+    private static string StatusOptionLabel(string s) => s switch
+    {
+        UserStatus.Active => "Hoạt động (mở khóa)",
+        UserStatus.Suspended => "Tạm khóa",
+        UserStatus.Banned => "Khóa vĩnh viễn",
+        _ => s,
+    };
+
+    private void OpenRole(AdminUserDto u)
+    {
+        _roleTarget = u;
+        _newRole = u.Role;
+        _modalError = null;
+    }
+
+    private void OpenStatus(AdminUserDto u)
+    {
+        _statusTarget = u;
+        _newStatus = u.Status == UserStatus.Active ? UserStatus.Suspended : UserStatus.Active;
+        _suspendDays = 7;
+        _reason = "";
+        _modalError = null;
+    }
+
+    private async Task SaveRoleAsync()
+    {
+        if (_roleTarget is not { } u || _newRole == u.Role) return;
+        _busy = true;
+        _modalError = null;
+        try
+        {
+            await AdminApi.ChangeRoleAsync(u.UserId, _newRole);
+            Toast.Success($"Đã đổi vai trò của {u.FullName} thành {Labels.Role(_newRole)}.");
+            _roleTarget = null;
+            await LoadAsync();
+        }
+        catch (ApiException ex)
+        {
+            _modalError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SaveStatusAsync()
+    {
+        if (_statusTarget is not { } u) return;
+        _modalError = null;
+        var reason = _reason.Trim();
+        if (_newStatus == UserStatus.Suspended && _suspendDays is not (>= 1 and <= 365))
+        {
+            _modalError = "Số ngày khóa phải từ 1 đến 365.";
+            return;
+        }
+        if (_newStatus != UserStatus.Active && reason.Length == 0)
+        {
+            _modalError = "Vui lòng nhập lý do khóa.";
+            return;
+        }
+        if (reason.Length > 500)
+        {
+            _modalError = "Lý do tối đa 500 ký tự.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await AdminApi.ChangeStatusAsync(u.UserId, new UpdateUserStatusRequest
+            {
+                Status = _newStatus,
+                SuspendDays = _newStatus == UserStatus.Suspended ? _suspendDays : null,
+                Reason = _newStatus == UserStatus.Active || reason.Length == 0 ? null : reason,
+            });
+            Toast.Success($"Đã cập nhật trạng thái của {u.FullName}: {Labels.UserStatus(_newStatus)}.");
+            _statusTarget = null;
+            await LoadAsync();
+        }
+        catch (ApiException ex)
+        {
+            _modalError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

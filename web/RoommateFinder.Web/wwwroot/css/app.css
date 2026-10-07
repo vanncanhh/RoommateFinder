@@ -1,6 +1,47 @@
+/* =====================================================================
+   RoommateFinder – bộ quy chuẩn giao diện (design tokens)
+   - MỘT font duy nhất: Be Vietnam Pro (wwwroot/lib/be-vietnam-pro) cho mọi chữ, kể cả nút, ô nhập, bảng.
+   - Màu, bo góc, bóng đổ, khoảng cách định nghĩa một lần ở :root và ghi đè biến của Bootstrap,
+     nên mọi trang tự đồng nhất — trang không tự đặt màu/font riêng.
+   ===================================================================== */
 :root {
-    --rf-primary: #0d6efd;
-    --rf-bg: #f5f6f8;
+    /* Màu chủ đạo: xanh dương dịu (tin cậy), điểm nhấn cam ấm (thân thiện) */
+    --rf-primary: #2563eb;
+    --rf-primary-rgb: 37, 99, 235;
+    --rf-primary-hover: #1d4ed8;
+    --rf-primary-soft: #eff4ff;
+    --rf-accent: #f97316;
+    --rf-bg: #f6f8fb;
+    --rf-surface: #ffffff;
+    --rf-border: #e5e9f0;
+    --rf-text: #1f2937;
+    --rf-muted: #6b7280;
+    --rf-radius: .75rem;
+    --rf-radius-sm: .5rem;
+    --rf-shadow-sm: 0 1px 2px rgba(16, 24, 40, .05);
+    --rf-shadow: 0 1px 3px rgba(16, 24, 40, .06), 0 4px 12px rgba(16, 24, 40, .04);
+    --rf-shadow-lg: 0 8px 24px rgba(16, 24, 40, .10);
+
+    /* Ghi đè biến Bootstrap 5.3 */
+    --bs-font-sans-serif: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    --bs-body-font-family: var(--bs-font-sans-serif);
+    --bs-body-font-size: .9375rem;
+    --bs-body-line-height: 1.6;
+    --bs-body-color: var(--rf-text);
+    --bs-body-bg: var(--rf-bg);
+    --bs-secondary-color: var(--rf-muted);
+    --bs-border-color: var(--rf-border);
+    --bs-border-radius: var(--rf-radius-sm);
+    --bs-border-radius-lg: var(--rf-radius);
+    --bs-primary: var(--rf-primary);
+    --bs-primary-rgb: var(--rf-primary-rgb);
+    --bs-primary-bg-subtle: var(--rf-primary-soft);
+    --bs-primary-text-emphasis: #1e40af;
+    --bs-link-color: var(--rf-primary);
+    --bs-link-color-rgb: var(--rf-primary-rgb);
+    --bs-link-hover-color: var(--rf-primary-hover);
+    --bs-link-hover-color-rgb: 29, 78, 216;
+    --bs-focus-ring-color: rgba(var(--rf-primary-rgb), .2);
 }
 
 html, body {
@@ -8,9 +49,286 @@ html, body {
 }
 
 body {
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: var(--bs-body-font-family);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
 }
 
+/* Bootstrap để form control/nút kế thừa font; đặt lại tường minh để chắc chắn chỉ có một font. */
+input, button, select, textarea, optgroup, .btn, .form-control, .form-select, .dropdown-menu, .modal, .toast, .tooltip, .popover {
+    font-family: inherit;
+}
+
+h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6 {
+    font-weight: 600;
+    letter-spacing: -.01em;
+    color: var(--rf-text);
+}
+
+/* Tiêu đề trang thống nhất (các trang dùng <h1 class="h4">) */
+h1.h4 {
+    font-size: 1.375rem;
+}
+
+a {
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+.btn:hover, .nav-link:hover, .dropdown-item:hover, .navbar-brand:hover, .page-link:hover, .card a:hover {
+    text-decoration: none;
+}
+
+::selection {
+    background: rgba(var(--rf-primary-rgb), .18);
+}
+
+/* ---------------------------------------------------------------- Nút */
+.btn {
+    --bs-btn-font-size: .9375rem;
+    --bs-btn-font-weight: 500;
+    --bs-btn-padding-x: 1rem;
+    --bs-btn-border-radius: var(--rf-radius-sm);
+    transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, color .15s ease;
+}
+
+.btn-sm {
+    --bs-btn-padding-x: .75rem;
+    --bs-btn-font-size: .8125rem;
+}
+
+.btn-lg {
+    --bs-btn-font-size: 1rem;
+}
+
+.btn-primary {
+    --bs-btn-bg: var(--rf-primary);
+    --bs-btn-border-color: var(--rf-primary);
+    --bs-btn-hover-bg: var(--rf-primary-hover);
+    --bs-btn-hover-border-color: var(--rf-primary-hover);
+    --bs-btn-active-bg: #1e40af;
+    --bs-btn-active-border-color: #1e40af;
+    --bs-btn-disabled-bg: var(--rf-primary);
+    --bs-btn-disabled-border-color: var(--rf-primary);
+    --bs-btn-focus-shadow-rgb: var(--rf-primary-rgb);
+    box-shadow: 0 1px 2px rgba(var(--rf-primary-rgb), .25);
+}
+
+.btn-outline-primary {
+    --bs-btn-color: var(--rf-primary);
+    --bs-btn-border-color: rgba(var(--rf-primary-rgb), .45);
+    --bs-btn-hover-bg: var(--rf-primary-soft);
+    --bs-btn-hover-color: var(--rf-primary-hover);
+    --bs-btn-hover-border-color: var(--rf-primary);
+    --bs-btn-active-bg: var(--rf-primary);
+    --bs-btn-active-border-color: var(--rf-primary);
+    --bs-btn-focus-shadow-rgb: var(--rf-primary-rgb);
+}
+
+.btn-outline-secondary {
+    --bs-btn-color: #374151;
+    --bs-btn-border-color: var(--rf-border);
+    --bs-btn-hover-bg: #f3f4f6;
+    --bs-btn-hover-color: #111827;
+    --bs-btn-hover-border-color: #d1d5db;
+    --bs-btn-active-bg: #e5e7eb;
+    --bs-btn-active-color: #111827;
+    --bs-btn-active-border-color: #d1d5db;
+    background: var(--rf-surface);
+}
+
+/* ---------------------------------------------------------------- Ô nhập */
+/* Cùng cỡ chữ với nội dung trang (Bootstrap mặc định 1rem cho ô nhập → lệch với chữ 15px). */
+.form-control, .form-select, .input-group-text {
+    font-size: .9375rem;
+}
+
+.form-control, .form-select {
+    border-color: #d8dee8;
+    padding: .55rem .85rem;
+    background-color: var(--rf-surface);
+}
+
+.form-select {
+    padding-right: 2.25rem;
+}
+
+.form-control-sm, .form-select-sm {
+    padding: .3rem .6rem;
+    font-size: .8125rem;
+}
+
+.form-control::placeholder {
+    color: #9ca3af;
+}
+
+/* Ô tích / radio: viền đủ đậm để thấy rõ trên nền trắng */
+.form-check-input {
+    border-color: #b8c1cf;
+}
+
+.form-check-label {
+    cursor: pointer;
+}
+
+.form-control:focus, .form-select:focus, .form-check-input:focus {
+    border-color: rgba(var(--rf-primary-rgb), .6);
+    box-shadow: 0 0 0 .2rem rgba(var(--rf-primary-rgb), .15);
+}
+
+.form-check-input:checked {
+    background-color: var(--rf-primary);
+    border-color: var(--rf-primary);
+}
+
+.form-label {
+    font-weight: 500;
+    font-size: .875rem;
+    color: #374151;
+    margin-bottom: .35rem;
+}
+
+.form-text {
+    color: var(--rf-muted);
+}
+
+.input-group-text {
+    background: #f3f5f9;
+    border-color: #d8dee8;
+    color: var(--rf-muted);
+}
+
+/* ---------------------------------------------------------------- Thẻ (card) */
+.card {
+    --bs-card-border-color: var(--rf-border);
+    --bs-card-border-radius: var(--rf-radius);
+    --bs-card-inner-border-radius: calc(var(--rf-radius) - 1px);
+    --bs-card-cap-bg: var(--rf-surface);
+    box-shadow: var(--rf-shadow-sm);
+}
+
+.card.shadow-sm {
+    box-shadow: var(--rf-shadow) !important;
+}
+
+.card.border-0 {
+    border: 1px solid var(--rf-border) !important;
+}
+
+.card-header {
+    font-weight: 600;
+    padding: .85rem 1.1rem;
+}
+
+/* ---------------------------------------------------------------- Bảng */
+.table {
+    --bs-table-bg: var(--rf-surface);
+    --bs-table-hover-bg: #f8fafc;
+    margin-bottom: 0;
+}
+
+.table > thead th {
+    background: #f8fafc;
+    color: var(--rf-muted);
+    font-weight: 600;
+    font-size: .8125rem;
+    text-transform: none;
+    border-bottom-width: 1px;
+    white-space: nowrap;
+}
+
+.table > :not(caption) > * > * {
+    padding: .7rem .85rem;
+    vertical-align: middle;
+}
+
+.table-responsive {
+    border-radius: var(--rf-radius);
+}
+
+/* ---------------------------------------------------------------- Badge, alert, modal, phân trang */
+.badge {
+    font-weight: 500;
+    letter-spacing: .01em;
+    padding: .38em .6em;
+    border-radius: .4rem;
+}
+
+.alert {
+    border-radius: var(--rf-radius-sm);
+    border-width: 1px;
+}
+
+.modal-content {
+    border: 0;
+    border-radius: var(--rf-radius);
+    box-shadow: var(--rf-shadow-lg);
+}
+
+.modal-header, .modal-footer {
+    border-color: var(--rf-border);
+}
+
+.modal-title {
+    font-weight: 600;
+}
+
+.pagination {
+    --bs-pagination-color: #374151;
+    --bs-pagination-border-color: var(--rf-border);
+    --bs-pagination-hover-bg: var(--rf-primary-soft);
+    --bs-pagination-hover-color: var(--rf-primary);
+    --bs-pagination-active-bg: var(--rf-primary);
+    --bs-pagination-active-border-color: var(--rf-primary);
+    --bs-pagination-focus-box-shadow: 0 0 0 .2rem rgba(var(--rf-primary-rgb), .15);
+    gap: .25rem;
+}
+
+.pagination .page-link {
+    border-radius: var(--rf-radius-sm) !important;
+    min-width: 2.1rem;
+    text-align: center;
+}
+
+.nav-tabs {
+    --bs-nav-tabs-border-color: var(--rf-border);
+    --bs-nav-tabs-link-active-color: var(--rf-primary);
+    --bs-nav-tabs-link-active-border-color: var(--rf-border) var(--rf-border) var(--rf-surface);
+    gap: .25rem;
+}
+
+.nav-tabs .nav-link {
+    color: var(--rf-muted);
+    font-weight: 500;
+}
+
+.nav-pills {
+    --bs-nav-pills-link-active-bg: var(--rf-primary);
+    gap: .25rem;
+}
+
+.nav-pills .nav-link {
+    color: #4b5563;
+    font-weight: 500;
+}
+
+.dropdown-menu {
+    --bs-dropdown-border-color: var(--rf-border);
+    --bs-dropdown-link-active-bg: var(--rf-primary);
+    border-radius: var(--rf-radius);
+    box-shadow: var(--rf-shadow-lg);
+    padding: .4rem;
+}
+
+.dropdown-item {
+    border-radius: var(--rf-radius-sm);
+    padding: .5rem .75rem;
+}
+
+/* ---------------------------------------------------------------- Khung trang */
 #blazor-error-ui {
     z-index: 2000;
 }
@@ -23,8 +341,43 @@ body {
     min-height: calc(100vh - 140px);
 }
 
+.navbar {
+    --bs-navbar-padding-y: .6rem;
+    background: rgba(255, 255, 255, .92) !important;
+    backdrop-filter: saturate(180%) blur(8px);
+    border-color: var(--rf-border) !important;
+}
+
+.navbar-brand {
+    font-weight: 700;
+    letter-spacing: -.02em;
+    color: var(--rf-primary) !important;
+}
+
 .navbar-brand .bi {
     font-size: 1.4rem;
+}
+
+.navbar-nav .nav-link {
+    color: #4b5563;
+    font-weight: 500;
+    border-radius: var(--rf-radius-sm);
+    padding: .45rem .75rem !important;
+}
+
+.navbar-nav .nav-link:hover {
+    color: var(--rf-primary);
+    background: var(--rf-primary-soft);
+}
+
+.navbar-nav .nav-link.active {
+    color: var(--rf-primary);
+    background: var(--rf-primary-soft);
+}
+
+footer {
+    border-top: 1px solid var(--rf-border);
+    background: var(--rf-surface);
 }
 
 /* Blazor đặt focus vào h1 sau mỗi lần chuyển trang (FocusOnNavigate, hỗ trợ trình đọc màn hình) — không vẽ viền focus. */
@@ -45,29 +398,42 @@ h1:focus-visible {
     }
 }
 
-/* Thẻ tin đăng */
+@media (max-width: 991.98px) {
+    .navbar-collapse .navbar-nav {
+        padding-top: .5rem;
+    }
+}
+
+/* ---------------------------------------------------------------- Thẻ tin đăng */
 .post-card {
-    transition: box-shadow .15s ease, transform .15s ease;
+    transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease;
+    overflow: hidden;
 }
 
 .post-card:hover {
-    box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .08);
-    transform: translateY(-2px);
+    box-shadow: var(--rf-shadow-lg) !important;
+    transform: translateY(-3px);
+    border-color: rgba(var(--rf-primary-rgb), .25) !important;
+}
+
+.post-card .card-title {
+    font-weight: 600;
+    line-height: 1.4;
 }
 
 .post-card .thumb {
     aspect-ratio: 4 / 3;
     object-fit: cover;
-    background: #e9ecef;
+    background: #eef1f6;
 }
 
 .post-card .thumb-placeholder {
     aspect-ratio: 4 / 3;
-    background: #e9ecef;
+    background: linear-gradient(135deg, #eef3ff 0%, #f5f7fb 100%);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #adb5bd;
+    color: #a5b4d4;
     font-size: 2.5rem;
 }
 
@@ -78,7 +444,7 @@ h1:focus-visible {
     overflow: hidden;
 }
 
-/* Chuông thông báo */
+/* ---------------------------------------------------------------- Chuông thông báo */
 .notif-menu {
     width: min(380px, 92vw);
     max-height: 70vh;
@@ -86,10 +452,10 @@ h1:focus-visible {
 }
 
 .notif-item.unread {
-    background: #eef4ff;
+    background: var(--rf-primary-soft);
 }
 
-/* Chat */
+/* ---------------------------------------------------------------- Chat */
 .chat-wrap {
     height: calc(100vh - 190px);
     min-height: 420px;
@@ -101,12 +467,13 @@ h1:focus-visible {
 
 .chat-messages {
     overflow-y: auto;
-    background: #fafbfc;
+    background: #f8fafc;
 }
 
 .bubble {
     max-width: 75%;
     word-break: break-word;
+    box-shadow: var(--rf-shadow-sm);
 }
 
 /* Chỉ phần nội dung giữ xuống dòng của người gửi; áp lên cả khung sẽ hiện khoảng trắng của mã Razor. */
@@ -123,10 +490,17 @@ h1:focus-visible {
     color: rgba(255, 255, 255, .8) !important;
 }
 
-/* Console moderator/admin */
+/* ---------------------------------------------------------------- Khu kiểm duyệt / quản trị */
 .console-nav .nav-link {
-    color: #495057;
-    border-radius: .375rem;
+    color: #4b5563;
+    font-weight: 500;
+    border-radius: var(--rf-radius-sm);
+    padding: .55rem .8rem;
+}
+
+.console-nav .nav-link:hover {
+    background: var(--rf-primary-soft);
+    color: var(--rf-primary);
 }
 
 .console-nav .nav-link.active {
@@ -134,10 +508,12 @@ h1:focus-visible {
     color: #fff;
 }
 
+/* ---------------------------------------------------------------- Thư viện ảnh */
 .gallery-main {
     aspect-ratio: 16 / 10;
     object-fit: cover;
-    background: #e9ecef;
+    background: #eef1f6;
+    border-radius: var(--rf-radius);
 }
 
 .gallery-thumb {
@@ -146,6 +522,7 @@ h1:focus-visible {
     object-fit: cover;
     cursor: pointer;
     opacity: .7;
+    border-radius: var(--rf-radius-sm);
 }
 
 .gallery-thumb.active {
@@ -154,14 +531,19 @@ h1:focus-visible {
 }
 
 .star {
-    color: #ffc107;
+    color: #f59e0b;
 }
 
 .toast-container {
     z-index: 1090;
 }
 
-/* Biểu đồ cột đơn giản (dashboard) */
+.toast {
+    border-radius: var(--rf-radius);
+    box-shadow: var(--rf-shadow-lg);
+}
+
+/* ---------------------------------------------------------------- Biểu đồ cột (dashboard) */
 .bar-chart {
     display: flex;
     align-items: flex-end;
@@ -171,7 +553,7 @@ h1:focus-visible {
 
 .bar-chart .bar {
     flex: 1;
-    background: var(--rf-primary);
-    border-radius: 2px 2px 0 0;
+    background: linear-gradient(180deg, #60a5fa 0%, var(--rf-primary) 100%);
+    border-radius: 3px 3px 0 0;
     min-height: 2px;
 }

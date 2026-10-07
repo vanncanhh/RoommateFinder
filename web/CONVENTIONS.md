@@ -16,6 +16,13 @@ Blazor WebAssembly standalone, .NET 8, **Bootstrap 5.3 thuần + Bootstrap Icons
 - Component `Shared/`: `Loading`, `ErrorAlert`, `EmptyState`, `Pager` (Page/TotalPages/PageChanged), `UserAvatar`, `Stars` (Editable cho chọn 1–5), `Badge`, `Modal` (Show/Title/OnClose/Footer/SizeClass), `PostCard` (Post/ShowStatus/Actions), `RedirectToLogin`.
 - Layout: trang thường dùng `MainLayout` mặc định; trang kiểm duyệt `@layout ModeratorLayout` + `@attribute [Authorize(Roles = Roles.ModeratorOrAdmin)]`; trang quản trị `@layout AdminLayout` + `@attribute [Authorize(Roles = Roles.Admin)]`; trang cần đăng nhập `@attribute [Authorize]`.
 
+## Quy chuẩn giao diện (bắt buộc)
+- **Một font duy nhất: Be Vietnam Pro** (`wwwroot/lib/be-vietnam-pro`, tải sẵn — chạy được khi không có mạng). Không thêm font khác, không đặt `font-family` trong trang. Icon dùng Bootstrap Icons.
+- Màu, bo góc, bóng đổ, cỡ chữ của nút/ô nhập/bảng/thẻ định nghĩa **một lần** ở đầu `wwwroot/css/app.css` (biến `--rf-*`, ghi đè biến Bootstrap). Trang chỉ dùng class Bootstrap (`btn-primary`, `text-secondary`, `card`, `badge text-bg-*`...) — **không** viết mã màu hex hay `font-size` cố định trong `.razor` (ngoại lệ: chữ chú thích rất nhỏ như giờ gửi tin).
+- Tiêu đề trang: `<h1 class="h4 mb-…">` kèm icon Bootstrap Icons; mô tả phụ dùng `text-secondary small`.
+- Màu trạng thái lấy từ `Labels.*Color(...)` để cùng một trạng thái luôn cùng một màu ở mọi trang.
+- Nút chính của trang dùng `btn-primary` (mỗi vùng chỉ một nút chính); thao tác phụ `btn-outline-secondary`; phá hủy `btn-outline-danger` + xác nhận bằng `Modal`.
+
 ## Quy ước viết trang
 - Mẫu tham khảo: `Pages/Auth/Login.razor`.
 - Mỗi trang có `<PageTitle>... – RoommateFinder</PageTitle>`.
